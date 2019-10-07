@@ -12,6 +12,10 @@
 // modified over time by the Author.
 #include <map>
 #include <vector>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/val.h>
+#endif
 #include "bdd.h"
 #include "term.h"
 
@@ -152,11 +156,13 @@ private:
 
 	size_t nstep = 0;
 	std::vector<table> tbls;
-	std::set<ntable> tmps;
+	std::set<ntable> tmprels;
 	std::map<sig, ntable> smap;
 	std::vector<rule> rules;
 	std::vector<level> levels;
+	std::map<ntable, std::set<ntable>> deps;
 	alt get_alt(const std::vector<raw_term>&);
+	bool get_alt(const std::set<term>& al, const term& h, alt&);
 	rule get_rule(const raw_rule&);
 	void get_sym(int_t s, size_t arg, size_t args, spbdd_handle& r) const;
 	void get_var_ex(size_t arg, size_t args, bools& b) const;
@@ -241,6 +247,7 @@ private:
 	void get_goals();
 	void print_env(const env& e, const rule& r) const;
 	void print_env(const env& e) const;
+	struct elem get_elem(int_t arg) const;
 	raw_term to_raw_term(const term& t) const;
 	void out(std::wostream&, spbdd_handle, ntable) const;
 	void out(spbdd_handle, ntable, const rt_printer&) const;
@@ -248,27 +255,32 @@ private:
 	flat_prog to_terms(const raw_prog& p);
 	void get_rules(flat_prog m);
 	void get_facts(const flat_prog& m);
-	ntable get_table(const sig& s, size_t priority = 0);
-	ntable get_new_tab(int_t x, ints ar, size_t priority = 0);
+	ntable get_table(const sig& s);
+	void table_increase_priority(ntable t, size_t inc = 1);
+	void set_priorities(const flat_prog&);
+	ntable get_new_tab(int_t x, ints ar);
 	lexeme get_new_rel();
 	void load_string(lexeme rel, const std::wstring& s);
 	lexeme get_var_lexeme(int_t i);
-	void add_prog(const raw_prog& p, const strs_t& strs);
-	void add_prog(flat_prog m, const strs_t& strs, bool mknums = false);
+	void add_prog(const raw_prog& p, const strs_t&);
+	void add_prog(flat_prog m, const std::vector<struct production>&,
+		bool mknums = false);
 	char fwd() noexcept;
 	level get_front() const;
-	std::vector<term> interpolate(std::vector<term> x, std::set<int_t> v,
-		size_t priority);
+	std::vector<term> interpolate(std::vector<term> x, std::set<int_t> v);
 	void transform_bin(flat_prog& p);
-	bool cqc(const std::vector<term>& x, std::vector<term> y, bool tmp)
-		const;
-	bool cqc(const std::vector<term>&, const flat_prog& m, bool tmp) const;
+	void transform_grammar(std::vector<struct production> g, flat_prog& p);
+	bool cqc(const std::vector<term>& x, std::vector<term> y) const;
+	bool cqc(const std::vector<term>&, const flat_prog& m) const;
+	bool bodies_equiv(std::vector<term> x, std::vector<term> y) const;
 	void cqc_minimize(std::vector<term>&) const;
 	ntable prog_add_rule(flat_prog& p, std::vector<term> x);
 //	std::map<ntable, std::set<spbdd_handle>> goals;
 	std::set<term> goals;
 	std::set<ntable> to_drop;
 	std::set<ntable> exts; // extensional
+	strs_t strs;
+	std::set<int_t> str_rels;
 //	std::function<int_t(void)>* get_new_rel;
 public:
 	tables(bool bproof = false, bool optimize = true,
@@ -279,6 +291,9 @@ public:
 	bool pfp(size_t nsteps = 0);
 	void out(std::wostream&) const;
 	void out(const rt_printer&) const;
+#ifdef __EMSCRIPTEN__
+	void out(emscripten::val o) const;
+#endif
 	void set_proof(bool v) { bproof = v; }
 };
 

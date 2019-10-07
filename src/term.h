@@ -13,8 +13,8 @@
 #include "defs.h"
 
 struct term : public ints {
-	bool neg, goal = false, iseq = false, isleq = false;
-	ntable tab;
+	bool neg = false, goal = false, iseq = false, isleq = false;
+	ntable tab = -1;
 	term() {}
 	term(bool neg, bool eq, bool isleq, ntable tab, const ints& args) :
 		ints(args), neg(neg), iseq(eq), isleq(isleq), tab(tab) {}
