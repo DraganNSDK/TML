@@ -167,7 +167,7 @@ private:
 	size_t bits = 2;
 	dict_t& dict;
 	bool bproof, datalog, optimize, unsat = false, bcqc = true,
-	     bin_transform = false, print_transformed;
+		 bin_transform = false, print_transformed;
 
 	size_t max_args = 0;
 	std::map<std::array<int_t, 6>, spbdd_handle> range_memo;
@@ -200,8 +200,8 @@ private:
 	spbdd_handle add_bit(spbdd_handle x, size_t args);
 	spbdd_handle leq_const(int_t c, size_t arg, size_t args, size_t bit)
 		const;
-    spbdd_handle leq_var(size_t arg1, size_t arg2, size_t args) const;
-    spbdd_handle leq_var(size_t arg1, size_t arg2, size_t args, size_t bit)
+	spbdd_handle leq_var(size_t arg1, size_t arg2, size_t args) const;
+	spbdd_handle leq_var(size_t arg1, size_t arg2, size_t args, size_t bit)
 		const;
 	void range(size_t arg, size_t args, bdd_handles& v);
 	spbdd_handle range(size_t arg, ntable tab);

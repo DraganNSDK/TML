@@ -89,7 +89,7 @@ set<raw_rule> driver::refresh_vars(raw_rule& r) {
 
 raw_term driver::from_grammar_elem(const elem& v, int_t v1, int_t v2) {
 	return { false, false, false, {
-        v, elem_openp, get_var_elem(v1), get_var_elem(v2), elem_closep}, {2}};
+		v, elem_openp, get_var_elem(v1), get_var_elem(v2), elem_closep}, {2}};
 }
 
 raw_term driver::from_grammar_elem_nt(const lexeme& r, const elem& c,
