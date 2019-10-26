@@ -93,6 +93,12 @@ size_t bdd_nvars(bdd_handles x);
 vbools allsat(cr_spbdd_handle x, uint_t nvars);
 extern std::vector<class bdd> V;
 
+struct cntinfo {
+	bool isleaf = false;
+	int_t x, l, h, var, oldvar, kpvar;
+	size_t kp, k;
+};
+
 class bdd {
 	friend class bdd_handle;
 	friend class allsat_cb;
@@ -204,6 +210,20 @@ public:
 	}
 
 	inline static uint_t var(int_t x) { return abs(V[abs(x)].v); }
+
+	static size_t count(const bdd& bx, int_t x, size_t nvars);
+	static size_t count(int_t x, size_t nvars);
+	static size_t bdd_count(int_t x, size_t nvars);
+
+	static size_t getvar(int_t x);
+	static size_t getvar(const bdd& bx, int_t x, size_t maxvar);
+	static size_t satcount(int_t x);
+	static size_t satcount_iter(int_t x, size_t leafvar);
+	static size_t satcount(const bdd& bx, int_t x, size_t leafvar, 
+		std::map<int_t, int_t>& mapvars);
+	static size_t satcount_iter(const bdd& bx0, int_t x0, size_t leafvar,
+		std::map<int_t, int_t>& mapvars);
+	static size_t bdd_satcount(int_t x);
 };
 
 class bdd_handle {

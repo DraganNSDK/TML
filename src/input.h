@@ -14,7 +14,9 @@
 #define __INPUT_H__
 
 #include "defs.h"
+#include "dict.h"
 #include <vector>
+#include <set>
 #include <array>
 #include <iostream>
 #include <sys/stat.h>
@@ -23,11 +25,16 @@ namespace input {
 	extern cws_range source;
 }
 
+struct raw_prog;
+
 bool operator==(const lexeme& x, const lexeme& y);
+
+static const std::set<std::wstring> str_bltins =
+	{ L"alpha", L"alnum", L"digit", L"space", L"printable", L"count", L"rnd" };
 
 struct elem {
 	enum etype {
-		SYM, NUM, CHR, VAR, OPENP, CLOSEP, ALT, STR, EQ, NEQ, LEQ, GT
+		SYM, NUM, CHR, VAR, OPENP, CLOSEP, ALT, STR, EQ, NEQ, LEQ, GT, BLTIN
 	} type;
 	int_t num = 0;
 	lexeme e;
@@ -57,10 +64,11 @@ struct elem {
 };
 
 struct raw_term {
-	bool neg = false, iseq = false, isleq = false;
+	// TODO: enum 'is...' stuff
+	bool neg = false, iseq = false, isleq = false, isbltin = false;
 	std::vector<elem> e;
 	ints arity;
-	bool parse(const lexemes& l, size_t& pos);
+	bool parse(const lexemes& l, size_t& pos, raw_prog& prog);
 	void calc_arity();
 	void insert_parens(lexeme op, lexeme cl);
 	void clear() { e.clear(), arity.clear(); }
@@ -77,7 +85,7 @@ struct directive {
 	raw_term t;
 	int_t n;
 	enum etype { STR, FNAME, CMDLINE, STDIN, STDOUT, TREE, TRACE, BWD }type;
-	bool parse(const lexemes& l, size_t& pos);
+	bool parse(const lexemes& l, size_t& pos, raw_prog& prog);
 };
 
 struct production {
@@ -96,7 +104,7 @@ struct raw_rule {
 
 	enum etype { NONE, GOAL, TREE };
 	etype type = NONE;
-	bool parse(const lexemes& l, size_t& pos);
+	bool parse(const lexemes& l, size_t& pos, raw_prog& prog);
 	void clear() { h.clear(), b.clear(), type = NONE; }
 	raw_rule(){}
 	raw_rule(etype type, const raw_term& t) : h({t}), type(type) {}
@@ -119,6 +127,8 @@ struct raw_prog {
 	std::vector<directive> d;
 	std::vector<production> g;
 	std::vector<raw_rule> r;
+	dict_t dict;
+	std::set<lexeme, lexcmp> builtins;
 //	int_t delrel = -1;
 	bool parse(const lexemes& l, size_t& pos);
 };

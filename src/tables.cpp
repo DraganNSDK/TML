@@ -213,8 +213,13 @@ term tables::from_raw_term(const raw_term& r) {
 			default: ;
 		}
 	// ints t is elems (VAR, consts) mapped to unique ints/ids for perms. 
-	ntable tbl = (r.iseq || r.isleq) ? -1 : get_table(get_sig(r));
-	return term(r.neg, r.iseq, r.isleq, tbl, t);
+	term::textype extype = r.iseq ? term::EQ :
+		(r.isleq ? term::LEQ : (r.isbltin ? term::BLTIN : term::REL));
+	if (extype == term::BLTIN) {
+		auto test = term::BLTIN;
+	}
+	ntable tbl = (extype > term::REL) ? -1 : get_table(get_sig(r));
+	return term(r.neg, extype, tbl, t);
 }
 
 void tables::out(wostream& os) const {
@@ -272,7 +277,7 @@ void tables::decompress(spbdd_handle x, ntable tab, const cb_decompress& f,
 	allsat_cb(x/*&&ts[tab].t*/, len * bits,
 		[tab, &f, len, this](const bools& p, int_t DBG(y)) {
 		DBG(assert(abs(y) == 1);)
-		term r(false, false, false, tab, ints(len, 0));
+		term r(false, term::REL, tab, ints(len, 0));
 		for (size_t n = 0; n != len; ++n)
 			for (size_t k = 0; k != bits; ++k)
 				if (p[pos(k, n, len)])
@@ -306,14 +311,15 @@ raw_term tables::to_raw_term(const term& r) const {
 	raw_term rt;
 	rt.neg = r.neg;
 	size_t args;
-	if (r.iseq)
+	if (r.extype == term::EQ) //r.iseq)
 		args = 2, rt.e.resize(args + 1), rt.e[0] = get_elem(r[0]),
 		rt.e[1] = elem(elem::SYM,dict.get_lexeme(r.neg ? L"!=" : L"=")),
 		rt.e[2] = get_elem(r[1]), rt.arity = {2};
-	else if (r.isleq)
+	else if (r.extype == term::LEQ) //r.isleq)
 		args = 2, rt.e.resize(args + 1), rt.e[0] = get_elem(r[0]),
 		rt.e[1] = elem(elem::SYM,dict.get_lexeme(r.neg ? L"<=" : L">")),
 		rt.e[2] = get_elem(r[1]), rt.arity = {2};
+	// TODO: BLTINS: add term::BLTIN handling 
 	else {
 		args = tbls.at(r.tab).len, rt.e.resize(args + 1);
 		rt.e[0] = elem(elem::SYM,
@@ -372,7 +378,7 @@ varmap tables::get_varmap(const term& h, const T& b, size_t &varslen) {
 	return m;
 }
 
-spbdd_handle tables::get_alt_range(const term& h, const set<term>& a,
+spbdd_handle tables::get_alt_range(const term& h, const term_set& a,
 	const varmap& vm, size_t len) {
 	set<int_t> pvars, nvars, eqvars, leqvars;
 	std::vector<const term*> eqterms, leqterms;
@@ -381,9 +387,10 @@ spbdd_handle tables::get_alt_range(const term& h, const set<term>& a,
 		bool haseq = false, hasleq = false;
 		for (size_t n = 0; n != t.size(); ++n)
 			if (t[n] >= 0) continue;
-			else if (t.iseq) haseq = true;
-			else if (t.isleq) hasleq = true;
+			else if (t.extype == term::EQ) haseq = true; // .iseq
+			else if (t.extype == term::LEQ) hasleq = true; // .isleq
 			else (t.neg ? nvars : pvars).insert(t[n]);
+		// TODO: BLTINS: add term::BLTIN handling
 		// only if iseq and has at least one var
 		if (haseq) eqterms.push_back(&t);
 		else if (hasleq) leqterms.push_back(&t);
@@ -622,16 +629,33 @@ wostream& tables::print(wostream& os, const flat_prog& p) const {
 	return os;
 }
 
-bool tables::get_alt(const set<term>& al, const term& h, alt& a) {
+//bool tables::get_alt(const set<term>& al, const term& h, alt& a) {
+bool tables::get_alt(const term_set& al, const term& h, alt& a) {
 	set<int_t> vs;
 	set<pair<body, term>> b;
 	spbdd_handle leq = bdd_handle::T, q;
+	pair<body, term> lastbody;
 	a.vm = get_varmap(h, al, a.varslen),
 	a.inv = varmap_inv(a.vm);
 	for (const term& t : al) {
-		if (t.size() != 2 || (!t.iseq && !t.isleq))
-			b.insert({get_body(t, a.vm, a.varslen), t});
-		else if (t.iseq) {
+		//if (t.size() != 2 || (!t.iseq && !t.isleq && !t.isbltin))
+		if (t.extype == term::REL) {
+			b.insert(lastbody = { get_body(t, a.vm, a.varslen), t });
+			//b.insert({ get_body(t, a.vm, a.varslen), t });
+		} else if (t.extype == term::BLTIN) {
+			DBG(assert(t.size() > 2);); // could potentially be 3 or more?
+			//// TODO: check that last body exists, but should always be present.
+			//// we need to construct a bdd i.e. exit var == count
+			//int_t cnt = bdd::count(lastbody.first.q->b, a.varslen);
+			//// just equate last var (output) with the count (here or in alt_q?)
+			//q = from_sym(a.vm.at(t.back()), a.varslen, mknum(cnt));
+			////leq_const(mknum(nums), arg, args, bits)
+			////q = from_sym_eq(a.vm.at(t[0]), a.vm.at(t[1]), a.varslen);
+			a.isbltin = true; // set type instead
+			a.bltinout = t.back();
+			a.bltinsize = t.size() - 1;
+		} else if (t.extype == term::EQ) { //.iseq
+			DBG(assert(t.size() == 2););
 			if (t[0] == t[1]) {
 				if (t.neg) return false;
 				continue;
@@ -648,7 +672,8 @@ bool tables::get_alt(const set<term>& al, const term& h, alt& a) {
 			else if (t[1] < 0)
 				q = from_sym(a.vm.at(t[1]), a.varslen, t[0]);
 			a.eq = t.neg ? a.eq % q : (a.eq && q);
-		} else if (t.isleq) {
+		} else if (t.extype == term::LEQ) { // .isleq
+			DBG(assert(t.size() == 2););
 			if (t[0] == t[1]) {
 				if (t.neg) return false;
 				continue;
@@ -669,7 +694,7 @@ bool tables::get_alt(const set<term>& al, const term& h, alt& a) {
 					a.vm.at(t[1]), a.varslen, bits) ||
 					from_sym(a.vm.at(t[1]), a.varslen,t[0]);
 			leq = t.neg ? leq % q : (leq && q);
-		}
+		} 
 	}
 	a.rng = get_alt_range(h, al, a.vm, a.varslen);
 	a.rng = bdd_and_many({ a.rng, leq });
@@ -811,6 +836,9 @@ void tables::transform_bin(flat_prog& p) {
 	if (print_transformed) print(wcout<<L"after transform_bin:"<<endl, p);
 }
 
+//struct natcmp 
+//{ bool operator()(const term& l, const term& r) const { return true; } };
+
 void tables::get_rules(flat_prog p) {
 	bcqc = false;
 	get_facts(p);
@@ -835,11 +863,22 @@ void tables::get_rules(flat_prog p) {
 	set_priorities(p);
 	if (bcqc) print(wcout<<L"after cqc, "<<p.size()<< L" rules."<<endl, p);
 	if (optimize) bdd::gc();
-	map<term, set<set<term>>> m;
+
+	// BLTINS: set order is important (and wrong) for e.g. REL, BLTIN, EQ
+	//static auto natcmp = [](term& a, term& b) { return true; }; // native order
+	//std::set<term, decltype(natcmp)> s(cmp);
+	//natcmp _nativecmp;
+
+	//map<term, set<set<term>>> m;
+	//map<term, set<set<term, decltype(natcmp)>>> m;
+	map<term, set<term_set>> m;
 	for (const auto& x : p)
 		if (x.size() == 1) m[x[0]] = {};
-		else m[x[0]].insert(set<term>(x.begin() + 1, x.end()));
-	for (pair<term, set<set<term>>> x : m) {
+		else m[x[0]].insert(term_set(x.begin()+1, x.end()));
+		//else m[x[0]].insert(set<term, decltype(natcmp)>(x.begin()+1, x.end()));
+		//else m[x[0]].insert(set<term>(x.begin() + 1, x.end()));
+	//for (pair<term, set<set<term>>> x : m) {
+	for (pair<term, set<term_set>> x : m) {
 		if (x.second.empty()) continue;
 		varmap v;
 		set<int_t> hvars;
@@ -855,8 +894,11 @@ void tables::get_rules(flat_prog p) {
 			else r.eq = r.eq&&from_sym_eq(n, it->second, t.size());
 		set<alt> as;
 		r.len = t.size();
-		for (const set<term>& al : x.second) {
+		//for (const set<term>& al : x.second) {
+		for (const term_set& al : x.second) {
 			alt a;
+			//set<term>& alset = reinterpret_cast<set<term>&>(al);
+			//if (get_alt(alset, t, a)) as.insert(move(a));
 			if (get_alt(al, t, a)) as.insert(move(a));
 		}
 		for (alt x : as)
@@ -1153,6 +1195,24 @@ spbdd_handle tables::alt_query(alt& a, size_t /*DBG(len)*/) {
 			a.insert(a.begin(), a[n]), a.erase(a.begin() + n + 1);
 			return bdd_handle::F;
 		} else v1.push_back(x);
+
+	//spbdd_handle qbltin = bdd_handle::T;
+	if (a.isbltin) {
+		//int_t cnt = bdd::count(x->b, a.perm.size());
+		//int_t cnt1 = bdd::bdd_count(x->b, a.perm.size());
+		//int_t cnt2 = bdd::satcount(x->b);
+		//int_t cnt3 = bdd::bdd_satcount(x->b);
+		int_t cnt = bdd::satcount(x->b);
+		int_t cnt1 = bdd::satcount_iter(x->b, 
+			a.perm.size() * a.bltinsize / a.varslen + 1);
+		//int_t cnt1 = bdd::count(x->b, a.perm.size() - a.perm.size() * a.bltinsize / a.varslen);
+		// just equate last var (output) with the count
+		x = from_sym(a.vm.at(a.bltinout), a.varslen, mknum(cnt));
+		v1.push_back(x);
+		wcout << L"alt_query: count: " << cnt << L", " << cnt1 << L"." << endl;
+	}
+	
+
 	sort(v1.begin(), v1.end(), handle_cmp);
 	if (v1 == a.last) return a.rlast;// { v.push_back(a.rlast); return; }
 	if (!bproof)

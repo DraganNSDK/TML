@@ -10,6 +10,8 @@
 // from the Author (Ohad Asor).
 // Contact ohad@idni.org for requesting a permission. This license may be
 // modified over time by the Author.
+#ifndef __DICT_H__
+#define __DICT_H__
 #include "defs.h"
 #include <map>
 
@@ -43,3 +45,4 @@ public:
 	}
 	~dict_t();
 };
+#endif // __DICT_H__

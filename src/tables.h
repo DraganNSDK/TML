@@ -42,6 +42,19 @@ template<typename T> struct ptrcmp {
 typedef std::function<void(size_t,size_t,size_t, const std::vector<term>&)>
 	cb_ground;
 
+struct natcmp { 
+	bool operator()(const term& l, const term& r) const {
+		if (l.neg != r.neg) return l.neg;
+		//if (iseq != t.iseq) return iseq;
+		//if (isleq != t.isleq) return isleq;
+		//if (extype != t.extype) return extype < t.extype;
+		//if (l.tab != r.tab) return l.tab < r.tab;
+		if (l.goal != r.goal) return l.goal;
+		return (const ints&)l < r;
+	}
+};
+typedef std::set<term, natcmp> term_set;
+
 struct body {
 	bool neg, ext = false;
 //	struct alt *a = 0;
@@ -71,6 +84,9 @@ struct alt : public std::vector<body*> {
 	std::map<size_t, int_t> inv;
 	std::map<size_t, spbdd_handle> levels;
 //	static std::set<alt*, ptrcmp<alt>> &s;
+	bool isbltin = false; // or bltin_type...
+	int_t bltinout;
+	size_t bltinsize;
 	bool operator<(const alt& t) const {
 		if (varslen != t.varslen) return varslen < t.varslen;
 		if (rng != t.rng) return rng < t.rng;
@@ -162,7 +178,8 @@ private:
 	std::vector<level> levels;
 	std::map<ntable, std::set<ntable>> deps;
 	alt get_alt(const std::vector<raw_term>&);
-	bool get_alt(const std::set<term>& al, const term& h, alt&);
+	//bool get_alt(const std::set<term>& al, const term& h, alt&);
+	bool get_alt(const term_set& al, const term& h, alt&);
 	rule get_rule(const raw_rule&);
 	void get_sym(int_t s, size_t arg, size_t args, spbdd_handle& r) const;
 	void get_var_ex(size_t arg, size_t args, bools& b) const;
@@ -221,8 +238,10 @@ private:
 	uints get_perm(const term& t, const varmap& m, size_t len) const;
 	template<typename T>
 	static varmap get_varmap(const term& h, const T& b, size_t &len);
-	spbdd_handle get_alt_range(const term& h, const std::set<term>& a,
-			const varmap& vm, size_t len);
+	//spbdd_handle get_alt_range(const term& h, const std::set<term>& a,
+	//		const varmap& vm, size_t len);
+	spbdd_handle get_alt_range(const term& h, const term_set& a,
+		const varmap& vm, size_t len);
 	spbdd_handle from_term(const term&, body *b = 0,
 		std::map<int_t, size_t>*m = 0, size_t hvars = 0);
 	body get_body(const term& t, const varmap&, size_t len) const;
