@@ -221,8 +221,7 @@ public:
 	static size_t satcount_iter(int_t x, size_t leafvar);
 	static size_t satcount(const bdd& bx, int_t x, size_t leafvar, 
 		std::map<int_t, int_t>& mapvars);
-	static size_t satcount_iter(const bdd& bx0, int_t x0, size_t leafvar,
-		std::map<int_t, int_t>& mapvars);
+	static size_t satcount_iter(const bdd& bx0, int_t x0, size_t leafvar);
 	static size_t bdd_satcount(int_t x);
 };
 

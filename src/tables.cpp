@@ -197,7 +197,10 @@ term tables::from_raw_term(const raw_term& r) {
 	ints t;
 	lexeme l;
 	// skip the first symbol unless it's EQ/NEQ (which has VAR as it's first)
-	for (size_t n = (r.iseq || r.isleq) ? 0 : 1; n < r.e.size(); ++n)
+	if (r.isbltin) {
+	}
+	bool isRel = !(r.iseq || r.isleq || r.isbltin);
+	for (size_t n = !isRel ? 0 : 1; n < r.e.size(); ++n)
 		switch (r.e[n].type) {
 			case elem::NUM: t.push_back(mknum(r.e[n].num)); break;
 			case elem::CHR: t.push_back(mkchr(r.e[n].ch)); break;
@@ -209,6 +212,8 @@ term tables::from_raw_term(const raw_term& r) {
 				t.push_back(dict.get_sym(dict.get_lexeme(
 					_unquote(lexeme2str(l)))));
 				break;
+			case elem::BLTIN:
+				t.push_back(dict.get_bltin(r.e[n].e)); break;
 			case elem::SYM: t.push_back(dict.get_sym(r.e[n].e));
 			default: ;
 		}
@@ -653,7 +658,8 @@ bool tables::get_alt(const term_set& al, const term& h, alt& a) {
 			////q = from_sym_eq(a.vm.at(t[0]), a.vm.at(t[1]), a.varslen);
 			a.isbltin = true; // set type instead
 			a.bltinout = t.back();
-			a.bltinsize = t.size() - 1;
+			a.bltinsize = t.size() - 2; // 1;
+			a.bltintype = dict.get_bltin(t[0]);
 		} else if (t.extype == term::EQ) { //.iseq
 			DBG(assert(t.size() == 2););
 			if (t[0] == t[1]) {
@@ -1198,18 +1204,19 @@ spbdd_handle tables::alt_query(alt& a, size_t /*DBG(len)*/) {
 
 	//spbdd_handle qbltin = bdd_handle::T;
 	if (a.isbltin) {
-		//int_t cnt = bdd::count(x->b, a.perm.size());
-		//int_t cnt1 = bdd::bdd_count(x->b, a.perm.size());
-		//int_t cnt2 = bdd::satcount(x->b);
-		//int_t cnt3 = bdd::bdd_satcount(x->b);
-		int_t cnt = bdd::satcount(x->b);
-		int_t cnt1 = bdd::satcount_iter(x->b, 
-			a.perm.size() * a.bltinsize / a.varslen + 1);
-		//int_t cnt1 = bdd::count(x->b, a.perm.size() - a.perm.size() * a.bltinsize / a.varslen);
-		// just equate last var (output) with the count
-		x = from_sym(a.vm.at(a.bltinout), a.varslen, mknum(cnt));
-		v1.push_back(x);
-		wcout << L"alt_query: count: " << cnt << L", " << cnt1 << L"." << endl;
+		if (a.bltintype == L"count") {
+			// slower (2-passes) / safer version till the _iter is tested fully
+			int_t cnt = bdd::satcount(x->b);
+			// this is optimized, iterative version of count
+			// vars should be normalized to 1,2,...,bits * a.bltinsize + 1 (leafs).
+			int_t cnt_iter = bdd::satcount_iter(x->b, bits * a.bltinsize + 1);
+			// a.perm.size() * a.bltinsize / a.varslen == bits * a.bltinsize
+			DBG(assert(cnt == cnt_iter););
+			// just equate last var (output) with the count
+			x = from_sym(a.vm.at(a.bltinout), a.varslen, mknum(cnt_iter));
+			v1.push_back(x);
+			wcout << L"alt_query (cnt):" << cnt << L", " << cnt_iter << L"" << endl;
+		}
 	}
 	
 

@@ -87,6 +87,7 @@ struct alt : public std::vector<body*> {
 	bool isbltin = false; // or bltin_type...
 	int_t bltinout;
 	size_t bltinsize;
+	lexeme bltintype;
 	bool operator<(const alt& t) const {
 		if (varslen != t.varslen) return varslen < t.varslen;
 		if (rng != t.rng) return rng < t.rng;

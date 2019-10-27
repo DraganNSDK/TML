@@ -863,54 +863,25 @@ size_t bdd::satcount(int_t x) {
 	leafvar = ivar;
 
 	//size_t newleafvar = ourvars.size() + 1;
-	//return satcount_iter(bx, x, leafvar, inv);
 	return satcount(bx, x, leafvar, inv);
 }
 
 size_t bdd::satcount_iter(int_t x, size_t leafvar) {
 	const bdd bx = get(x);
-
-	//ourvars.clear();
-	//size_t leafvar = getvar(bx, x, 0) + 1;
-
-	map<int_t, int_t> inv;
-	//int_t ivar = 1;
-	//for (auto x : ourvars) {
-	//	inv.emplace(x, ivar++);
-	//	//inv.emplace(x, x); ivar++;
-	//}
-	//leafvar = ivar;
-
-	return satcount_iter(bx, x, leafvar, inv);
+	return satcount_iter(bx, x, leafvar);
 }
-
-//size_t bdd::satcount(int_t x, size_t bddsize) {
-//	const bdd bx = get(x);
-//	ourvars.clear();
-//	size_t leafvar = getvar(bx, x, 0) + 1;
-//
-//	map<int_t, int_t> inv;
-//	int_t ivar = 1;
-//	for (auto x : ourvars) {
-//		inv.emplace(x, ivar++);
-//	}
-//	leafvar = ivar;
-//
-//	//size_t newleafvar = ourvars.size() + 1;
-//	return satcount(bx, x, leafvar, inv);
-//}
 
 // TODO: optimize/cache, on multiple calls/static, or similar/diff/patterns?
 size_t bdd::satcount(const bdd& bx, int_t x, size_t leafvar, 
 	map<int_t, int_t>& mapvars) {
 	size_t r = 0;
 	if (leaf(x)) return trueleaf(x) ? 1 : 0;
-	wcout << L"satcount: x: " << x << L", " << bx.h << L", " << bx.l << L", " << bx.v << L" ." << endl;
+	//wcout << L"satcount: x: " << x << L", " << bx.h << L", " << bx.l << L", " << bx.v << L" ." << endl;
 	const bdd bhi = get(bx.h), blo = get(bx.l);
 	int_t hivar = leaf(bx.h) ? leafvar : mapvars.at(bhi.v); // nvars + 1 - bx.v
 	int_t lovar = leaf(bx.l) ? leafvar : mapvars.at(blo.v);
-	wcout << L"satcount: low: \t" << bx.l << L", " << blo.h << L", " << blo.l << L", " << lovar << L" ." << endl;
-	wcout << L"satcount: high: \t" << bx.l << L", " << bhi.h << L", " << bhi.l << L", " << hivar << L" ." << endl;
+	//wcout << L"satcount: low: \t" << bx.l << L", " << blo.h << L", " << blo.l << L", " << lovar << L" ." << endl;
+	//wcout << L"satcount: high: \t" << bx.l << L", " << bhi.h << L", " << bhi.l << L", " << hivar << L" ." << endl;
 	r += satcount(bhi, bx.h, leafvar, mapvars) *
 		(1 << (hivar - mapvars.at(bx.v) - 1));
 	r += satcount(blo, bx.l, leafvar, mapvars) *
@@ -918,14 +889,39 @@ size_t bdd::satcount(const bdd& bx, int_t x, size_t leafvar,
 	return r;
 }
 
-std::vector<cntinfo> vstack(100);
+int_t restack(
+	vector<cntinfo>& stack, const cntinfo& info, int_t istart, int_t step = 1) {
+	for (int i = istart;; --i) {
+		cntinfo& newinfo = stack[i + step];
+		if (i < 0 || info.var <= stack[i].var) {
+			newinfo = info;
+			//newinfo = *(&info); // info;
+			return i; // break;
+		}
+		cntinfo& oldinfo = stack[i];
+		newinfo = oldinfo;
+		//newinfo = *(&oldinfo);
+	}
+	return -1;
+}
+//int ileft = restack(vstack, l, ipop - 2, 2);
+//for (int i = istart;; --i) {
+//	cntinfo& newinfo = vstack[i + step];
+//	if (i < 0 || info.var <= vstack[i].var) {
+//		newinfo = info;
+//		ileft = i;
+//		break;
+//	}
+//	cntinfo& oldinfo = vstack[i];
+//	newinfo = oldinfo;
+//}
+
+std::vector<cntinfo> vstack(1000);
 
 // TODO: optimize/cache, on multiple calls/static, or similar/diff/patterns?
-size_t bdd::satcount_iter(const bdd& bx0, int_t x0, size_t leafvar,
-	map<int_t, int_t>& mapvars) {
+size_t bdd::satcount_iter(const bdd& bx0, int_t x0, size_t leafvar) {
 	size_t r = 0;
 	int_t ivar = 1, lastvar = bx0.v;
-	// var may be mapped so save it along as it may not be the same as bx.var
 	int ipop = -1;
 	cntinfo& item = vstack[++ipop];
 	item.x = x0;
@@ -936,11 +932,9 @@ size_t bdd::satcount_iter(const bdd& bx0, int_t x0, size_t leafvar,
 	item.k = 1;
 	item.kp = 1;
 	item.kpvar = 0;
-	//vstack.emplace_back(bx0, x0, bx0.var, 1);
 	//std::priority_queue<int> q;
 	constexpr int_t maxint = numeric_limits<int>::max();
-	int_t topvar = maxint; // numeric_limits<int>::max();
-	//std::vector<cntinfo> tstack(100);
+	int_t topvar = maxint;
 	while (ipop >= 0) { //!vstack.empty()) {
 		cntinfo& info = vstack[ipop--];
 		topvar = ipop >= 0 ? vstack[ipop].var : maxint;
@@ -948,8 +942,6 @@ size_t bdd::satcount_iter(const bdd& bx0, int_t x0, size_t leafvar,
 		if (info.oldvar > lastvar) {
 			++ivar;
 			lastvar = info.oldvar;
-			//int_t newvar = ivar;
-			//size_t newk = info.kp * (1 << (info.var - info.kpvar - 1));
 			info.var = ivar;
 			info.k = info.kp * (1 << (info.var - info.kpvar - 1));
 		}
@@ -958,19 +950,11 @@ size_t bdd::satcount_iter(const bdd& bx0, int_t x0, size_t leafvar,
 			info.k = info.kp * (1 << (info.var - info.kpvar - 1));
 		}
 
-		if (info.var != leafvar && info.var != ivar) {
-			auto test = ivar;
-		}
-		if (info.k != info.kp * (1 << (info.var - info.kpvar - 1))) {
-			auto test = ivar;
-		}
+		DBG(assert(info.var == leafvar || info.var == ivar););
+		DBG(assert(info.k == info.kp * (1 << (info.var - info.kpvar - 1))););
 
-		wcout << L"satcount_iter: x: " << info.x << L", " << info.h << L", " << info.l << L", " << info.var << L", " << ivar << L" ." << endl;
+		//wcout << L"satcount_iter: x: " << info.x << L", " << info.h << L", " << info.l << L", " << info.var << L", " << ivar << L" ." << endl;
 
-		//const bdd& bx = info.bx;
-		//int_t x = info.x;
-		//size_t k = info.k;
-		//int_t var = info.var;
 		if (leaf(info.x)) {
 			r += info.k * (trueleaf(info.x) ? 1 : 0);
 			continue;
@@ -986,25 +970,15 @@ size_t bdd::satcount_iter(const bdd& bx0, int_t x0, size_t leafvar,
 			info.k * (1 << (lovar - xvar - 1)) };
 		cntinfo h = { hileaf, info.h, bhi.l, bhi.h, hivar, bhi.v, xvar, info.k,
 			info.k * (1 << (hivar - xvar - 1)) };
-
-		wcout << L"satcount_iter: low: \t" << l.x << L", " << l.h << L", " << l.l << L", " << l.var << L" ." << endl;
-		wcout << L"satcount_iter: high: \t" << h.x << L", " << h.h << L", " << h.l << L", " << h.var << L" ." << endl;
-
-		//l.bx = get(bx.l), l.x = bx.l;
-		//l.var = leaf(bx.l) ? leafvar : mapvars.at(l.bx.v);
-		//l.k = (1 << (l.var - mapvars.at(bx.v) - 1));
-		//h.bx = get(bx.h), h.x = bx.h;
-		//h.var = leaf(bx.h) ? leafvar : mapvars.at(h.bx.v);
-		//h.k = (1 << (h.var - mapvars.at(bx.v) - 1));
+		//wcout << L"satcount_iter: low: \t" << l.x << L", " << l.h << L", " << l.l << L", " << l.var << L" ." << endl;
+		//wcout << L"satcount_iter: high: \t" << h.x << L", " << h.h << L", " << h.l << L", " << h.var << L" ." << endl;
 
 		if (l.isleaf)
 			r += l.k * (trueleaf(l.x) ? 1 : 0);
 		if (h.isleaf)
 			r += h.k * (trueleaf(h.x) ? 1 : 0);
-
 		if (l.isleaf && h.isleaf)
 			continue;
-
 		if (l.var > h.var || l.isleaf)
 			swap(l, h);
 
@@ -1018,15 +992,16 @@ size_t bdd::satcount_iter(const bdd& bx0, int_t x0, size_t leafvar,
 		else if (l.var <= topvar) {
 			if (!h.isleaf) {
 				// ipop >= 0 (i.e. stack is not empty cause we have a topvar)
-				for (int i = ipop++; i >= 0; --i) {
-					cntinfo& oldinfo = vstack[i];
-					cntinfo& newinfo = vstack[i + 1];
-					newinfo = *(&oldinfo);
-					if (i <= 0 || h.var <= vstack[i - 1].var) {
-						oldinfo = h;
-						break;
-					}
-				}
+				restack(vstack, ipop++, h);
+				//for (int i = ipop++; i >= 0; --i) {
+				//	cntinfo& oldinfo = vstack[i];
+				//	cntinfo& newinfo = vstack[i + 1];
+				//	newinfo = *(&oldinfo);
+				//	if (i <= 0 || h.var <= vstack[i - 1].var) {
+				//		oldinfo = h;
+				//		break;
+				//	}
+				//}
 				//for (int i = ipop++;; --i) {
 				//	cntinfo& newinfo = vstack[i + 1];
 				//	if (i < 0 || h.var <= vstack[i].var) {
@@ -1043,15 +1018,16 @@ size_t bdd::satcount_iter(const bdd& bx0, int_t x0, size_t leafvar,
 		}
 		else if (h.isleaf) {
 			// ipop >= 0 (i.e. stack is not empty cause we have a topvar)
-			for (int i = ipop++; i >= 0; --i) {
-				cntinfo& oldinfo = vstack[i];
-				cntinfo& newinfo = vstack[i + 1];
-				newinfo = *(&oldinfo);
-				if (i <= 0 || l.var <= vstack[i - 1].var) {
-					oldinfo = l;
-					break;
-				}
-			}
+			restack(vstack, ipop++, l);
+			//for (int i = ipop++; i >= 0; --i) {
+			//	cntinfo& oldinfo = vstack[i];
+			//	cntinfo& newinfo = vstack[i + 1];
+			//	newinfo = *(&oldinfo);
+			//	if (i <= 0 || l.var <= vstack[i - 1].var) {
+			//		oldinfo = l;
+			//		break;
+			//	}
+			//}
 		}
 		else {
 			ipop += 2;
@@ -1060,7 +1036,8 @@ size_t bdd::satcount_iter(const bdd& bx0, int_t x0, size_t leafvar,
 			for (int i = ipop - 2; i >= 0; --i) {
 				cntinfo& oldinfo = vstack[i];
 				cntinfo& newinfo = vstack[i + 2];
-				newinfo = *(&oldinfo);
+				newinfo = oldinfo;
+				//newinfo = *(&oldinfo);
 				if (i <= 0 || l.var <= vstack[i - 1].var) {
 					cntinfo& newinfo = vstack[i + 1];
 					newinfo = l;
@@ -1068,42 +1045,33 @@ size_t bdd::satcount_iter(const bdd& bx0, int_t x0, size_t leafvar,
 					break;
 				}
 			}
-			for (int i = ileft - 1;; --i) {
-				cntinfo& newinfo = vstack[i + 1];
-				if (i < 0 || h.var <= vstack[i].var) {
-					newinfo = h;
-					break;
-				}
-				cntinfo& oldinfo = vstack[i];
-				newinfo = *(&oldinfo);
-			}
+
+			int ileft = restack(vstack, ipop - 2, l, 2);
+			//for (int i = ipop - 2;; --i) {
+			//	cntinfo& newinfo = vstack[i + 2];
+			//	if (i < 0 || l.var <= vstack[i].var) {
+			//		newinfo = l;
+			//		ileft = i;
+			//		break;
+			//	}
+			//	cntinfo& oldinfo = vstack[i];
+			//	newinfo = oldinfo;
+			//}
+
+			// TODO: extract this loop in a function e.g. 'restack(i, info)'
+			restack(vstack, ileft - 1, h);
+			//for (int i = ileft - 1;; --i) {
+			//	cntinfo& newinfo = vstack[i + 1];
+			//	if (i < 0 || h.var <= vstack[i].var) {
+			//		newinfo = h;
+			//		break;
+			//	}
+			//	cntinfo& oldinfo = vstack[i];
+			//	newinfo = *(&oldinfo);
+			//}
 		}
-		//if (l.var > topvar) {
-		//	do {
-		//		cntinfo& oldinfo = vstack[ipop--];
-		//		cntinfo& newinfo = tstack[++tpop];
-		//		newinfo = *(&oldinfo);
-		//		//*(&newinfo) = *(&oldinfo);
-		//		//memcpy((void*)newinfo, (void*)oldinfo, sizeof(cntinfo));
-		//		//newinfo.bx = oldinfo.bx;
-		//		//newinfo.x = oldinfo.x;
-		//		//newinfo.var = oldinfo.var;
-		//		//newinfo.k = oldinfo.k;
-		//	} while (l.var > topvar);
-		//	cntinfo& leftinfo = tstack[++tpop];
-		//	leftinfo = l;
-		//	//leftinfo.bx = l.bx;
-		//	//leftinfo.x = l.x;
-		//	//leftinfo.var = l.var;
-		//	//leftinfo.k = l.k;
-		//}
 	}
 	return r;
-	//r += satcount(bhi, bx.h, leafvar, mapvars) *
-	//	(1 << (hivar - mapvars.at(bx.v) - 1));
-	//r += satcount(blo, bx.l, leafvar, mapvars) *
-	//	(1 << (lovar - mapvars.at(bx.v) - 1));
-	//return r;
 }
 
 size_t bdd::bdd_satcount(int_t x) {
