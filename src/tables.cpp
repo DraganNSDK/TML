@@ -193,7 +193,7 @@ sig tables::get_sig(const lexeme& rel, const ints& arity) {
 	return { dict.get_rel(rel), arity };
 }
 
-term tables::from_raw_term(const raw_term& r) {
+term tables::from_raw_term(const raw_term& r, const size_t orderid) {
 	ints t;
 	lexeme l;
 	// skip the first symbol unless it's EQ/NEQ (which has VAR as it's first)
@@ -224,7 +224,7 @@ term tables::from_raw_term(const raw_term& r) {
 		auto test = term::BLTIN;
 	}
 	ntable tbl = (extype > term::REL) ? -1 : get_table(get_sig(r));
-	return term(r.neg, extype, tbl, t);
+	return term(r.neg, extype, tbl, t, orderid);
 }
 
 void tables::out(wostream& os) const {
@@ -282,7 +282,7 @@ void tables::decompress(spbdd_handle x, ntable tab, const cb_decompress& f,
 	allsat_cb(x/*&&ts[tab].t*/, len * bits,
 		[tab, &f, len, this](const bools& p, int_t DBG(y)) {
 		DBG(assert(abs(y) == 1);)
-		term r(false, term::REL, tab, ints(len, 0));
+		term r(false, term::REL, tab, ints(len, 0), 0);
 		for (size_t n = 0; n != len; ++n)
 			for (size_t k = 0; k != bits; ++k)
 				if (p[pos(k, n, len)])
@@ -519,8 +519,9 @@ flat_prog tables::to_terms(const raw_prog& p) {
 				get_nums(x), t = from_raw_term(x),
 				v.push_back(t);
 				for (const vector<raw_term>& y : r.b) {
-					for (const raw_term& z : y)
-						v.push_back(from_raw_term(z)),
+					int i = 0;
+					for (const raw_term& z : y) // term_set(
+						v.push_back(from_raw_term(z, i++)),
 						get_nums(z);
 					align_vars(v), m.insert(move(v));
 				}
@@ -648,17 +649,18 @@ bool tables::get_alt(const term_set& al, const term& h, alt& a) {
 			b.insert(lastbody = { get_body(t, a.vm, a.varslen), t });
 			//b.insert({ get_body(t, a.vm, a.varslen), t });
 		} else if (t.extype == term::BLTIN) {
-			DBG(assert(t.size() > 2);); // could potentially be 3 or more?
-			//// TODO: check that last body exists, but should always be present.
-			//// we need to construct a bdd i.e. exit var == count
-			//int_t cnt = bdd::count(lastbody.first.q->b, a.varslen);
-			//// just equate last var (output) with the count (here or in alt_q?)
-			//q = from_sym(a.vm.at(t.back()), a.varslen, mknum(cnt));
-			////leq_const(mknum(nums), arg, args, bits)
-			////q = from_sym_eq(a.vm.at(t[0]), a.vm.at(t[1]), a.varslen);
-			a.isbltin = true; // set type instead
+			DBG(assert(t.size() > 2);); // BLTIN + ?v, + could have many vars
+			// TODO: check that last body exists, but should always be present.
+			DBG(assert(lastbody.second.size() > 0););
+			a.isbltin = true; // TODO: use bltintype instead?
 			a.bltinout = t.back();
-			a.bltinsize = t.size() - 2; // 1;
+			// TODO: check that vars match - in number and names too?
+			term& bt = lastbody.second;
+			int varcount = count_if(bt.begin(), bt.end(),
+				[](int i) { return i < 0; });
+			DBG(assert(varcount == t.size() - 2););
+			a.bltinsize = varcount; // BLTIN type (1st) + ?out (last)
+			//a.bltinsize = t.size() - 2; // BLTIN type (1st) + ?out (last)
 			a.bltintype = dict.get_bltin(t[0]);
 		} else if (t.extype == term::EQ) { //.iseq
 			DBG(assert(t.size() == 2););

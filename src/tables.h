@@ -44,6 +44,7 @@ typedef std::function<void(size_t,size_t,size_t, const std::vector<term>&)>
 
 struct natcmp { 
 	bool operator()(const term& l, const term& r) const {
+		if (l.orderid != r.orderid) return l.orderid < r.orderid;
 		if (l.neg != r.neg) return l.neg;
 		//if (iseq != t.iseq) return iseq;
 		//if (isleq != t.isleq) return isleq;
@@ -248,7 +249,7 @@ private:
 	body get_body(const term& t, const varmap&, size_t len) const;
 	void align_vars(std::vector<term>& b) const;
 	spbdd_handle from_fact(const term& t);
-	term from_raw_term(const raw_term&);
+	term from_raw_term(const raw_term&, const size_t orderid = 0);
 	std::pair<bools, uints> deltail(size_t len1, size_t len2) const;
 	uints addtail(size_t len1, size_t len2) const;
 	spbdd_handle addtail(cr_spbdd_handle x, size_t len1, size_t len2) const;

@@ -17,9 +17,10 @@ struct term : public ints {
 	bool neg = false, goal = false; // , iseq = false, isleq = false, isbltin;
 	enum textype { REL, EQ, LEQ, BLTIN } extype = term::REL;
 	ntable tab = -1;
+	size_t orderid = 0;
 	term() {}
-	term(bool neg, textype extype, ntable tab, const ints& args) :
-		ints(args), neg(neg), extype(extype), tab(tab) {}
+	term(bool neg, textype extype, ntable tab, const ints& args, size_t orderid) 
+		: ints(args), neg(neg), extype(extype), tab(tab), orderid(orderid) {}
 	bool operator<(const term& t) const {
 		if (neg != t.neg) return neg;
 		//if (iseq != t.iseq) return iseq;
