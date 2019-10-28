@@ -876,17 +876,17 @@ size_t bdd::satcount(const bdd& bx, int_t x, size_t leafvar,
 	map<int_t, int_t>& mapvars) {
 	size_t r = 0;
 	if (leaf(x)) return trueleaf(x) ? 1 : 0;
-	//wcout << L"satcount: x: " << x << L", " << bx.h << L", " << bx.l << L", " << bx.v << L" ." << endl;
 	const bdd bhi = get(bx.h), blo = get(bx.l);
 	int_t hivar = leaf(bx.h) ? leafvar : mapvars.at(bhi.v); // nvars + 1 - bx.v
 	int_t lovar = leaf(bx.l) ? leafvar : mapvars.at(blo.v);
-	//wcout << L"satcount: low: \t" << bx.l << L", " << blo.h << L", " << blo.l << L", " << lovar << L" ." << endl;
-	//wcout << L"satcount: high: \t" << bx.l << L", " << bhi.h << L", " << bhi.l << L", " << hivar << L" ." << endl;
 	r += satcount(bhi, bx.h, leafvar, mapvars) *
 		(1 << (hivar - mapvars.at(bx.v) - 1));
 	r += satcount(blo, bx.l, leafvar, mapvars) *
 		(1 << (lovar - mapvars.at(bx.v) - 1));
 	return r;
+	//wcout << L"satcount: x: " << x << L", " << bx.h << L", " << bx.l << L", " << bx.v << L" ." << endl;
+	//wcout << L"satcount: low: \t" << bx.l << L", " << blo.h << L", " << blo.l << L", " << lovar << L" ." << endl;
+	//wcout << L"satcount: high: \t" << bx.l << L", " << bhi.h << L", " << bhi.l << L", " << hivar << L" ." << endl;
 }
 
 int_t restack(
@@ -899,6 +899,16 @@ int_t restack(
 		}
 		cntinfo& oldinfo = stack[i];
 		newinfo = oldinfo;
+	}
+	return -1;
+}
+
+int_t reshrink(
+	vector<cntinfo>& stack, int_t ibegin, int_t iend) {
+	for (int i = ibegin; i < iend; ++i) {
+		cntinfo& oldpos = stack[i];
+		cntinfo& newpos = stack[i - 1];
+		newpos = oldpos;
 	}
 	return -1;
 }
@@ -924,14 +934,33 @@ size_t bdd::satcount_iter(const bdd& bx0, int_t x0, size_t leafvar) {
 	int_t topvar = maxint;
 	while (ipop >= 0) { //!vstack.empty()) {
 		cntinfo& info = vstack[ipop--];
+		//if (info.skip) continue; // copies are skipped, instead of shrinking
+
 		size_t copy_k = 1;
-		// poorman's caching, see comment below (copies are often grouped)...
-		// TODO: find all scattered copies and shrink stack (all holes)
-		while (ipop >= 0 && vstack[ipop].x == info.x) {
-			ipop--;
-			copy_k++;
-		}
-		topvar = ipop >= 0 ? vstack[ipop].var : maxint;
+		// caching: copies are all ready (same vars are always grouped), 
+		// find all copies, mark as skipped and just multiply this instead.
+		//for (int i = ipop; 
+		//	i >= 0 && (vstack[i].skip || vstack[i].oldvar == info.oldvar); 
+		//	--i) {
+		//	if (!vstack[i].skip && vstack[i].x == info.x) {
+		//		vstack[i].skip = true;
+		//		copy_k++;
+		//	}
+		//}
+
+		//topvar = ipop >= 0 ? vstack[ipop].var : maxint;
+		// topvar always compares to newly added l, h which have oldvars
+		// other topvar= don't count, and this handles skipped all right.
+		topvar = ipop >= 0 ? vstack[ipop].oldvar : maxint;
+
+		// TODO: we need to handle skip when restacking too (or better shrink?)
+		//topvar = maxint;
+		//for (int i = ipop; i >= 0; --i) {
+		//	if (!vstack[i].skip) {
+		//		topvar = vstack[i].oldvar;
+		//		break;
+		//	}
+		//}
 
 		if (info.oldvar > lastvar) {
 			++ivar;
@@ -967,9 +996,9 @@ size_t bdd::satcount_iter(const bdd& bx0, int_t x0, size_t leafvar) {
 		int_t xvar = info.var; // mapvars.at(info.var);
 
 		cntinfo l = { loleaf, info.l, blo.l, blo.h, lovar, blo.v, xvar, info.k,
-			info.k * (1 << (lovar - xvar - 1)) };
+			info.k * (1 << (lovar - xvar - 1)), false };
 		cntinfo h = { hileaf, info.h, bhi.l, bhi.h, hivar, bhi.v, xvar, info.k,
-			info.k * (1 << (hivar - xvar - 1)) };
+			info.k * (1 << (hivar - xvar - 1)), false };
 
 		// no need to stack leaf, as we already know all we need (thanks to k).
 		if (l.isleaf)
@@ -985,7 +1014,9 @@ size_t bdd::satcount_iter(const bdd& bx0, int_t x0, size_t leafvar) {
 			hiinfo = h;
 			cntinfo& loinfo = vstack[++ipop];
 			loinfo = l;
-			topvar = ipop >= 0 ? vstack[ipop].var : maxint;
+			// unnecessary, to remove...
+			topvar = ipop >= 0 ? vstack[ipop].oldvar : maxint;
+			//topvar = ipop >= 0 ? vstack[ipop].var : maxint;
 		}
 		else if (l.var <= topvar) {
 			if (!h.isleaf) {
@@ -994,7 +1025,9 @@ size_t bdd::satcount_iter(const bdd& bx0, int_t x0, size_t leafvar) {
 			}
 			cntinfo& loinfo = vstack[++ipop];
 			loinfo = l;
-			topvar = ipop >= 0 ? vstack[ipop].var : maxint; // == l.var
+			// unnecessary, to remove...
+			topvar = ipop >= 0 ? vstack[ipop].oldvar : maxint; // == l.var
+			//topvar = ipop >= 0 ? vstack[ipop].var : maxint; // == l.var
 		}
 		else if (h.isleaf) {
 			// ipop >= 0 (i.e. stack is not empty cause we have a topvar)
@@ -1004,7 +1037,8 @@ size_t bdd::satcount_iter(const bdd& bx0, int_t x0, size_t leafvar) {
 			// topvar doesn't change here, we're just inserting
 			ipop += 2;
 			int ileft = restack(vstack, l, ipop - 2, 2);
-			restack(vstack, h, ileft - 1);
+			// ileft is already first below last emptied
+			restack(vstack, h, ileft); // -1);
 		}
 	}
 	return r;

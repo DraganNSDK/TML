@@ -97,6 +97,7 @@ struct cntinfo {
 	bool isleaf = false;
 	int_t x, l, h, var, oldvar, kpvar;
 	size_t kp, k;
+	bool skip = false;
 };
 
 class bdd {
