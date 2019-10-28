@@ -930,37 +930,21 @@ size_t bdd::satcount_iter(const bdd& bx0, int_t x0, size_t leafvar) {
 	item.k = 1;
 	item.kp = 1;
 	item.kpvar = 0;
+	// TODO: handle when bx0 is leaf already, just exit (0) I guess.
 	constexpr int_t maxint = numeric_limits<int>::max();
 	int_t topvar = maxint;
 	while (ipop >= 0) { //!vstack.empty()) {
 		cntinfo& info = vstack[ipop--];
-		//if (info.skip) continue; // copies are skipped, instead of shrinking
 
-		size_t copy_k = 1;
-		// caching: copies are all ready (same vars are always grouped), 
-		// find all copies, mark as skipped and just multiply this instead.
-		//for (int i = ipop; 
-		//	i >= 0 && (vstack[i].skip || vstack[i].oldvar == info.oldvar); 
-		//	--i) {
-		//	if (!vstack[i].skip && vstack[i].x == info.x) {
-		//		vstack[i].skip = true;
-		//		copy_k++;
-		//	}
-		//}
-
-		//topvar = ipop >= 0 ? vstack[ipop].var : maxint;
-		// topvar always compares to newly added l, h which have oldvars
-		// other topvar= don't count, and this handles skipped all right.
-		topvar = ipop >= 0 ? vstack[ipop].oldvar : maxint;
-
-		// TODO: we need to handle skip when restacking too (or better shrink?)
-		//topvar = maxint;
-		//for (int i = ipop; i >= 0; --i) {
-		//	if (!vstack[i].skip) {
-		//		topvar = vstack[i].oldvar;
-		//		break;
-		//	}
-		//}
+		// leaf nees no additional handling, and only happens if root is leaf.
+		if (leaf(info.x)) { // not called at all, only for the first maybe
+			if (leafvar != ivar + 1) {
+				wcout << L"satcount(leaf):" 
+					<< ivar << L", " << leafvar << L" ." << endl;
+			}
+			r += info.k * (trueleaf(info.x) ? 1 : 0);
+			continue;
+		}
 
 		if (info.oldvar > lastvar) {
 			++ivar;
@@ -976,18 +960,25 @@ size_t bdd::satcount_iter(const bdd& bx0, int_t x0, size_t leafvar) {
 		DBG(assert(info.var == leafvar || info.var == ivar););
 		DBG(assert(info.k == info.kp * (1 << (info.var - info.kpvar - 1))););
 
-		if (copy_k > 1)
-			info.k *= copy_k;
-
-		// TODO: we should cache (as it can repeat), but it's tricky like this. 
 		// good news is that all 'copies' should be grouped in stack, so we can
-		// check the same level ones (before pop), and if multiples just do n*k.
+		// check all of the same level/var, and if multiples adjust and sum k-s.
 		// (of course remove copies and just process one of them)
-
-		if (leaf(info.x)) { // not called at all, only for the first maybe
-			r += info.k * (trueleaf(info.x) ? 1 : 0);
-			continue;
+		size_t k_copies = 0; // don't multiply, add sum of all copies' k-s.
+		for (int i = ipop; i >= 0 && vstack[i].oldvar == info.oldvar; --i) {
+			if (vstack[i].x == info.x) {
+				// reshrink will erase so do k first (ivar==info.var==this.var).
+				k_copies += vstack[i].kp * (1 << (ivar - vstack[i].kpvar - 1));
+				// make sure we don't disturb info, as it's a ref to a place
+				reshrink(vstack, i + 1, ipop + 1);
+				--ipop;
+			}
 		}
+		if (k_copies > 0)
+			info.k += k_copies;
+
+		// topvar always compares to newly added l, h which have oldvars
+		// other topvar= don't count, and this handles copies all right.
+		topvar = ipop >= 0 ? vstack[ipop].oldvar : maxint;
 
 		const bdd bhi = get(info.h), blo = get(info.l);
 		bool loleaf = leaf(info.l), hileaf = leaf(info.h);
