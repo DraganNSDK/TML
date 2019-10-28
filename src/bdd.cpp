@@ -903,14 +903,9 @@ int_t restack(
 	return -1;
 }
 
-int_t reshrink(
-	vector<cntinfo>& stack, int_t ibegin, int_t iend) {
-	for (int i = ibegin; i < iend; ++i) {
-		cntinfo& oldpos = stack[i];
-		cntinfo& newpos = stack[i - 1];
-		newpos = oldpos;
-	}
-	return -1;
+void reshrink(vector<cntinfo>& stack, int_t ibegin, int_t iend) {
+	for (int i = ibegin; i < iend; ++i) 
+		stack[i - 1] = stack[i];
 }
 
 // similar to std::priority_queue<int> q;
@@ -987,9 +982,9 @@ size_t bdd::satcount_iter(const bdd& bx0, int_t x0, size_t leafvar) {
 		int_t xvar = info.var; // mapvars.at(info.var);
 
 		cntinfo l = { loleaf, info.l, blo.l, blo.h, lovar, blo.v, xvar, info.k,
-			info.k * (1 << (lovar - xvar - 1)), false };
+			info.k * (1 << (lovar - xvar - 1)) };
 		cntinfo h = { hileaf, info.h, bhi.l, bhi.h, hivar, bhi.v, xvar, info.k,
-			info.k * (1 << (hivar - xvar - 1)), false };
+			info.k * (1 << (hivar - xvar - 1)) };
 
 		// no need to stack leaf, as we already know all we need (thanks to k).
 		if (l.isleaf)
@@ -998,7 +993,8 @@ size_t bdd::satcount_iter(const bdd& bx0, int_t x0, size_t leafvar) {
 			r += h.k * (trueleaf(h.x) ? 1 : 0);
 		if (l.isleaf && h.isleaf)
 			continue;
-		if (l.var > h.var || l.isleaf)
+		//if (l.var > h.var || l.isleaf)
+		if (l.isleaf || (!h.isleaf && l.var > h.var))
 			swap(l, h);
 		if (h.var <= topvar && !h.isleaf) {
 			cntinfo& hiinfo = vstack[++ipop];
