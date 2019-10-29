@@ -11,6 +11,7 @@
 // Contact ohad@idni.org for requesting a permission. This license may be
 // modified over time by the Author.
 #include <algorithm>
+#include <random>
 #include "tables.h"
 #include "dict.h"
 #include "input.h"
@@ -654,6 +655,7 @@ bool tables::get_alt(const term_set& al, const term& h, alt& a) {
 			DBG(assert(lastbody.second.size() > 0););
 			a.isbltin = true; // TODO: use bltintype instead?
 			a.bltinout = t.back();
+			a.bltinargs = t;
 			// TODO: check that vars match - in number and names too?
 			term& bt = lastbody.second;
 			int varcount = count_if(bt.begin(), bt.end(),
@@ -1213,18 +1215,23 @@ spbdd_handle tables::alt_query(alt& a, size_t /*DBG(len)*/) {
 			x = from_sym(a.vm.at(a.bltinout), a.varslen, mknum(cnt));
 			v1.push_back(x);
 			wcout << L"alt_query (cnt):" << cnt << L"" << endl;
-			//// slower (2-passes) / safer version till the _iter is tested fully
-			//int_t cnt = bdd::satcount(x->b);
-			//// this is optimized, iterative version of count
-			//// vars should be normalized to 1,2,...,bits * a.bltinsize + 1 (leafs).
-			//auto xperm = bdd_permute_ex(x, a.ex, a.perm);
-			//int_t cnt1 = bdd::satcount(xperm->b);
-			//int_t cnt_iter = bdd::satcount_iter(x->b, bits * a.bltinsize + 1);
-			//// a.perm.size() * a.bltinsize / a.varslen == bits * a.bltinsize
-			//DBG(assert(cnt == cnt_iter););
-			//// just equate last var (output) with the count
-			//x = from_sym(a.vm.at(a.bltinout), a.varslen, mknum(cnt_iter));
-			//v1.push_back(x);
+		}
+		else if (a.bltintype == L"rnd") {
+			DBG(assert(a.bltinargs.size() == 4););
+			// TODO: check that it's num const
+			int_t arg0 = int_t(a.bltinargs[1] >> 2);
+			int_t arg1 = int_t(a.bltinargs[2] >> 2);
+			if (arg0 > arg1) swap(arg0, arg1);
+			
+			//int_t rnd = arg0 + (std::rand() % (arg1 - arg0 + 1));
+			std::random_device rd;
+			std::mt19937 gen(rd());
+			std::uniform_int_distribution<> distr(arg0, arg1);
+			int_t rnd = distr(gen);
+
+			x = from_sym(a.vm.at(a.bltinout), a.varslen, mknum(rnd));
+			v1.push_back(x);
+			wcout << L"alt_query (rnd):" << rnd << L"" << endl;
 		}
 	}
 	

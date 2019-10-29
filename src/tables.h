@@ -86,9 +86,10 @@ struct alt : public std::vector<body*> {
 	std::map<size_t, spbdd_handle> levels;
 //	static std::set<alt*, ptrcmp<alt>> &s;
 	bool isbltin = false; // or bltin_type...
-	int_t bltinout;
+	int_t bltinout; // TODO: use bltinargs instead
 	size_t bltinsize;
 	lexeme bltintype;
+	ints bltinargs;
 	bool operator<(const alt& t) const {
 		if (varslen != t.varslen) return varslen < t.varslen;
 		if (rng != t.rng) return rng < t.rng;
