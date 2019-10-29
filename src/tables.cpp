@@ -1207,17 +1207,24 @@ spbdd_handle tables::alt_query(alt& a, size_t /*DBG(len)*/) {
 	//spbdd_handle qbltin = bdd_handle::T;
 	if (a.isbltin) {
 		if (a.bltintype == L"count") {
-			// slower (2-passes) / safer version till the _iter is tested fully
-			int_t cnt = bdd::satcount(x->b);
-			// this is optimized, iterative version of count
-			// vars should be normalized to 1,2,...,bits * a.bltinsize + 1 (leafs).
-			int_t cnt_iter = bdd::satcount_iter(x->b, bits * a.bltinsize + 1);
-			// a.perm.size() * a.bltinsize / a.varslen == bits * a.bltinsize
-			DBG(assert(cnt == cnt_iter););
+			spbdd_handle xperm = bdd_permute_ex(x, a.ex, a.perm);
+			int_t cnt = bdd::satcount(xperm->b, bits * a.bltinsize + 1);
 			// just equate last var (output) with the count
-			x = from_sym(a.vm.at(a.bltinout), a.varslen, mknum(cnt_iter));
+			x = from_sym(a.vm.at(a.bltinout), a.varslen, mknum(cnt));
 			v1.push_back(x);
-			wcout << L"alt_query (cnt):" << cnt << L", " << cnt_iter << L"" << endl;
+			wcout << L"alt_query (cnt):" << cnt << L"" << endl;
+			//// slower (2-passes) / safer version till the _iter is tested fully
+			//int_t cnt = bdd::satcount(x->b);
+			//// this is optimized, iterative version of count
+			//// vars should be normalized to 1,2,...,bits * a.bltinsize + 1 (leafs).
+			//auto xperm = bdd_permute_ex(x, a.ex, a.perm);
+			//int_t cnt1 = bdd::satcount(xperm->b);
+			//int_t cnt_iter = bdd::satcount_iter(x->b, bits * a.bltinsize + 1);
+			//// a.perm.size() * a.bltinsize / a.varslen == bits * a.bltinsize
+			//DBG(assert(cnt == cnt_iter););
+			//// just equate last var (output) with the count
+			//x = from_sym(a.vm.at(a.bltinout), a.varslen, mknum(cnt_iter));
+			//v1.push_back(x);
 		}
 	}
 	
