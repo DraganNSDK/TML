@@ -350,6 +350,7 @@ void term::replace(const map<int_t, int_t>& m) {
 }
 
 void tables::align_vars(vector<term>& v) const {
+	// D: this is not optimal, vs just to see if it's empty, join w/ below
 	set<int_t> vs;
 	for (const term& t : v) for (int_t i : t) if (i < 0) vs.insert(i);
 	if (vs.empty()) return;
@@ -660,10 +661,12 @@ bool tables::get_alt(const term_set& al, const term& h, alt& a) {
 			term& bt = lastbody.second;
 			int varcount = count_if(bt.begin(), bt.end(),
 				[](int i) { return i < 0; });
-			DBG(assert(varcount == t.size() - 2););
+			//DBG(assert(varcount == t.size() - 2););
 			a.bltinsize = varcount; // BLTIN type (1st) + ?out (last)
 			//a.bltinsize = t.size() - 2; // BLTIN type (1st) + ?out (last)
 			a.bltintype = dict.get_bltin(t[0]);
+			//int_t cnt = bdd::satcount(lastbody.first.q->b, bits * a.bltinsize + 1);
+			//spbdd_handle xperm = bdd_permute_ex(x, a.ex, a.perm);
 		} else if (t.extype == term::EQ) { //.iseq
 			DBG(assert(t.size() == 2););
 			if (t[0] == t[1]) {
@@ -1209,8 +1212,13 @@ spbdd_handle tables::alt_query(alt& a, size_t /*DBG(len)*/) {
 	//spbdd_handle qbltin = bdd_handle::T;
 	if (a.isbltin) {
 		if (a.bltintype == L"count") {
-			spbdd_handle xperm = bdd_permute_ex(x, a.ex, a.perm);
-			int_t cnt = bdd::satcount(xperm->b, bits * a.bltinsize + 1);
+			//auto xall = bdd_and_many_ex_perm(v1, a.ex, a.perm);
+			//int_t cnt = bdd::satcount(xall->b);
+			//body& blast = *a[a.size() - 1];
+			//spbdd_handle xprmt = bdd_permute_ex(x, blast.ex, blast.perm);
+			//int_t cnt = bdd::satcount_perm(xprmt->b, bits * a.bltinsize + 1);
+			int_t cnt = bdd::satcount(x->b);
+
 			// just equate last var (output) with the count
 			x = from_sym(a.vm.at(a.bltinout), a.varslen, mknum(cnt));
 			v1.push_back(x);
