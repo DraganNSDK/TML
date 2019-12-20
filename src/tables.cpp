@@ -19,8 +19,8 @@
 #include "err.h"
 using namespace std;
 
-#define mkchr(x) ((((int_t)x+1)<<2)|1)
-#define mknum(x) ((((int_t)x+1)<<2)|2)
+#define mkchr(x) ((((int_t)x)<<2)|1)
+#define mknum(x) ((((int_t)x)<<2)|2)
 
 size_t sig_len(const sig& s) {
 	size_t r = 0;
@@ -103,7 +103,7 @@ void tables::range(size_t arg, size_t args, bdd_handles& v) {
 		(!nums 	? bdd_handle::T%isnum : bdd_impl(isnum,
 			leq_const(mknum(nums), arg, args, bits))),
 		(!syms 	? bdd_handle::T%issym : bdd_impl(issym,
-			leq_const(((syms-1+1)<<2), arg, args, bits)))};
+			leq_const(((syms-1)<<2), arg, args, bits)))};
 	v.insert(v.end(), r.begin(), r.end());
 }
 
@@ -304,12 +304,12 @@ set<term> tables::decompress() {
 elem tables::get_elem(int_t arg) const {
 	if (arg < 0) return elem(elem::VAR, get_var_lexeme(arg));
 	if (arg & 1) {
-		const wchar_t ch = (arg >> 2) - 1;
+		const wchar_t ch = arg >> 2;
 		if (iswprint(ch)) return elem(ch);
 		return	elem(elem::SYM, dict.get_lexeme(wstring(L"\"#") +
 			to_wstring((unsigned char)(ch)) + L"\""));
 	}
-	if (arg & 2) return elem((int_t)((arg>>2) - 1));
+	if (arg & 2) return elem((int_t)(arg>>2));
 	return elem(elem::SYM, dict.get_sym(arg));
 }
 
@@ -538,8 +538,7 @@ void freeze(vector<term>& v) {
 	int_t m = 0;
 	map<int_t, int_t> p;
 	map<int_t, int_t>::const_iterator it;
-	// D: -1(mknum)?
-	for (const term& t : v) for (int_t i : t) if (i & 2) m = max(m, (i >> 2)-1);
+	for (const term& t : v) for (int_t i : t) if (i & 2) m = max(m, i >> 2);
 	for (term& t : v)
 		for (int_t& i : t)
 			if (i >= 0) continue;
@@ -1228,8 +1227,8 @@ spbdd_handle tables::alt_query(alt& a, size_t /*DBG(len)*/) {
 		else if (a.bltintype == L"rnd") {
 			DBG(assert(a.bltinargs.size() == 4););
 			// TODO: check that it's num const
-			int_t arg0 = int_t(a.bltinargs[1] >> 2)-1;
-			int_t arg1 = int_t(a.bltinargs[2] >> 2)-1;
+			int_t arg0 = int_t(a.bltinargs[1] >> 2);
+			int_t arg1 = int_t(a.bltinargs[2] >> 2);
 			if (arg0 > arg1) swap(arg0, arg1);
 			
 			//int_t rnd = arg0 + (std::rand() % (arg1 - arg0 + 1));
