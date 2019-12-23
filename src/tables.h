@@ -18,11 +18,12 @@
 #endif
 #include "bdd.h"
 #include "term.h"
-
 typedef int_t rel_t;
 struct raw_term;
 struct raw_prog;
 struct raw_rule;
+struct raw_sof;
+struct raw_form_tree;
 class tables;
 class dict_t;
 
@@ -30,7 +31,6 @@ typedef std::pair<rel_t, ints> sig;
 typedef std::map<int_t, size_t> varmap;
 typedef std::map<int_t, int_t> env;
 typedef bdd_handles level;
-//typedef std::map<term, std::set<std::set<term>>> flat_prog;
 typedef std::set<std::vector<term>> flat_prog;
 
 std::wostream& operator<<(std::wostream& os, const env& e);
@@ -75,7 +75,7 @@ struct body {
 };
 
 struct alt : public std::vector<body*> {
-	spbdd_handle rng=bdd_handle::T, eq=bdd_handle::T, rlast=bdd_handle::F;
+	spbdd_handle rng = htrue, eq = htrue, rlast = hfalse;
 	size_t varslen;
 	bdd_handles last;
 	std::vector<term> t;
@@ -101,7 +101,7 @@ struct alt : public std::vector<body*> {
 struct rule : public std::vector<alt*> {
 	bool neg;
 	ntable tab;
-	spbdd_handle eq, rlast = bdd_handle::F, h;
+	spbdd_handle eq, rlast = hfalse, h;
 	size_t len;
 	bdd_handles last;
 	term t;
@@ -122,7 +122,7 @@ struct rule : public std::vector<alt*> {
 struct table {
 	sig s;
 	size_t len, priority = 0;
-	spbdd_handle t = bdd_handle::F;
+	spbdd_handle t = hfalse;
 	bdd_handles add, del;
 	std::vector<size_t> r;
 	bool ext = true; // extensional
@@ -130,6 +130,7 @@ struct table {
 	bool commit(DBG(size_t));
 };
 
+struct form;
 class tables {
 	friend std::ostream& operator<<(std::ostream& os, const tables& tbl);
 	friend std::istream& operator>>(std::istream& is, tables& tbl);
@@ -154,7 +155,7 @@ private:
 
 	struct proof_elem {
 		size_t rl, al;
-		std::vector<std::pair<size_t, term>> b;
+		std::vector<std::pair<nlevel, term>> b;
 		bool operator<(const proof_elem& t) const {
 			if (rl != t.rl) return rl < t.rl;
 			if (al != t.al) return al < t.al;
@@ -173,7 +174,7 @@ private:
 		const std::set<term>& b) const;
 	std::wostream& print(std::wostream& os, const flat_prog& p) const;
 
-	size_t nstep = 0;
+	nlevel nstep = 0;
 	std::vector<table> tbls;
 	std::set<ntable> tmprels;
 	std::map<sig, ntable> smap;
@@ -181,8 +182,8 @@ private:
 	std::vector<level> levels;
 	std::map<ntable, std::set<ntable>> deps;
 	alt get_alt(const std::vector<raw_term>&);
-	//bool get_alt(const std::set<term>& al, const term& h, alt&);
-	bool get_alt(const term_set& al, const term& h, alt&);
+	bool get_alt(const term_set& al, const term& h, std::set<alt>& as);
+	//void get_alt(const std::set<term>& al, const term& h, std::set<alt>&as);
 	rule get_rule(const raw_rule&);
 	void get_sym(int_t s, size_t arg, size_t args, spbdd_handle& r) const;
 	void get_var_ex(size_t arg, size_t args, bools& b) const;
@@ -251,7 +252,7 @@ private:
 	spbdd_handle from_term(const term&, body *b = 0,
 		std::map<int_t, size_t>*m = 0, size_t hvars = 0);
 	body get_body(const term& t, const varmap&, size_t len) const;
-	void align_vars(std::vector<term>& b) const;
+//	void align_vars(std::vector<term>& b) const;
 	spbdd_handle from_fact(const term& t);
 	term from_raw_term(const raw_term&, const size_t orderid = 0);
 	std::pair<bools, uints> deltail(size_t len1, size_t len2) const;
@@ -268,7 +269,10 @@ private:
 		cb_ground f);
 	void term_get_grounds(const term& t, size_t level, cb_ground f);
 	std::set<witness> get_witnesses(const term& t, size_t l);
-	size_t get_proof(const term& q, proof& p, size_t level);
+	size_t get_proof(const term& q, proof& p, size_t level, size_t dep=-1);
+	void run_internal_prog(flat_prog p, std::set<term>& r, size_t nsteps=0);
+	ntable create_tmp_rel(size_t len);
+	void create_tmp_head(std::vector<term>& x);
 	void get_goals();
 	void print_env(const env& e, const rule& r) const;
 	void print_env(const env& e) const;
@@ -296,10 +300,12 @@ private:
 	void transform_bin(flat_prog& p);
 	void transform_grammar(std::vector<struct production> g, flat_prog& p);
 	bool cqc(const std::vector<term>& x, std::vector<term> y) const;
+//	flat_prog cqc(std::vector<term> x, std::vector<term> y) const;
 	bool cqc(const std::vector<term>&, const flat_prog& m) const;
 	bool bodies_equiv(std::vector<term> x, std::vector<term> y) const;
 	void cqc_minimize(std::vector<term>&) const;
-	ntable prog_add_rule(flat_prog& p, std::vector<term> x);
+	ntable prog_add_rule(flat_prog& p, std::map<ntable, ntable>& r,
+		std::vector<term> x);
 //	std::map<ntable, std::set<spbdd_handle>> goals;
 	std::set<term> goals;
 	std::set<ntable> to_drop;
@@ -307,6 +313,9 @@ private:
 	strs_t strs;
 	std::set<int_t> str_rels;
 //	std::function<int_t(void)>* get_new_rel;
+
+	bool from_raw_form(const raw_form_tree *rs, form *&froot);
+	bool to_pnf( form *&froot);
 public:
 	tables(bool bproof = false, bool optimize = true,
 		bool bin_transform = false, bool print_transformed = false);
@@ -320,6 +329,93 @@ public:
 	void out(emscripten::val o) const;
 #endif
 	void set_proof(bool v) { bproof = v; }
+};
+
+struct transformer;
+struct form{
+friend struct transformer;
+
+	int_t arg;
+	term *tm;
+	form *l;
+	form *r;
+	enum ftype { NONE, ATOM, FORALL1, EXISTS1, FORALL2, EXISTS2, UNIQUE1, UNIQUE2, AND, OR, NOT, IMPLIES, COIMPLIES 
+	} type;
+
+	
+	form(){
+		type = NONE; l = NULL; r = NULL; arg = 0; tm = NULL;
+	}
+
+	form( ftype _type, int_t _arg=0, term *_t=NULL, form *_l= NULL, form *_r=NULL  ) {
+		arg= _arg; tm = _t; type = _type; l = _l; r = _r;
+		if( _t) tm = new term(), *tm = *_t;
+	}
+	bool isquantifier() const {
+		 if( type == form::ftype::FORALL1 || 
+			 type == form::ftype::EXISTS1 ||
+			 type == form::ftype::UNIQUE1 ||
+			 type == form::ftype::EXISTS2 ||
+			 type == form::ftype::UNIQUE2 ||
+			 type == form::ftype::FORALL2 )
+			 return true;
+		return false;
+
+	}
+
+	~form() {
+		if(l) delete l, l = NULL;
+		if(r) delete r, r = NULL;
+		if(tm) delete tm, tm = NULL;
+	}
+	void printnode(int lv=0);
+};
+
+struct transformer {
+	virtual bool apply(form *&root) = 0;
+	form::ftype getdual( form::ftype type);
+	virtual bool traverse(form *&);
+};
+
+
+struct implic_removal : public transformer {
+	 
+	 virtual bool apply(form *&root);
+};
+
+struct demorgan : public transformer {
+	 
+
+	bool allow_neg_move_quant =false;
+	bool push_negation( form *&root);
+	virtual bool apply( form *&root);
+	demorgan(bool _allow_neg_move_quant =false){
+		allow_neg_move_quant = _allow_neg_move_quant;
+	}
+};
+
+struct pull_quantifier: public transformer {
+	dict_t &dt;
+	pull_quantifier(dict_t &_dt): dt(_dt) {}
+	virtual bool apply( form *&root);
+	virtual bool traverse( form *&root);
+	bool dosubstitution(form * phi, form* end);
+}; 
+struct substitution: public transformer {
+	
+	std::map<int_t, int_t> submap_var;
+	std::map<int_t, int_t> submap_sym;
+
+	void clear() { submap_var.clear(); submap_sym.clear();}
+	void add( int_t oldn, int_t newn) {
+		if(oldn < 0)
+			submap_var[oldn] = newn;
+		else 
+			submap_sym[oldn] = newn;
+	}
+	
+	virtual bool apply(form *&phi);
+	
 };
 
 std::wostream& operator<<(std::wostream& os, const vbools& x);

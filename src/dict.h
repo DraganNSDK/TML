@@ -34,7 +34,8 @@ public:
 	int_t get_rel(const lexeme& l);
 	int_t get_sym(const lexeme& l);
 	int_t get_bltin(const lexeme& l);
-
+	int_t get_fresh_sym( int_t old);
+	int_t get_fresh_var( int_t old);
 	lexeme get_lexeme(const std::wstring& s);
 	int_t get_rel(const std::wstring& s) { return get_rel(get_lexeme(s)); }
 	int_t get_bltin(const std::wstring& s) { return get_bltin(get_lexeme(s)); }

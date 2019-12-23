@@ -46,6 +46,15 @@ lexeme lex(pcws s) {
 	if (**s == L'<' && *(*s + 1) == L'=') {
 		return *s += 2, lexeme{ *s - 2, *s };
 	}
+	if (**s == L'-' && *(*s + 1) == L'>') {
+		return *s += 2, lexeme{ *s - 2, *s };
+	}
+	// implication and coimplication
+	if (**s == L'<' && *(*s + 1) == L'-' && *(*s + 2) == L'>') {
+		return *s += 3, lexeme{ *s - 3, *s };
+	}
+	
+
 	if (**s == L'>') return ++ * s, lexeme{ *s - 1, *s };
 	if (**s == L'<') {
 		while (*++*s != L'>') if (!**s) parse_error(t, err_fname);
@@ -75,7 +84,7 @@ lexeme lex(pcws s) {
 	//if (**s == L'=' && *(*s + 1) == L'=') {
 	//	return *s += 2, lexeme{ *s - 2, *s };
 	//}
-	if (wcschr(L"!~.,;(){}$@=<>|", **s)) return ++*s, lexeme{ *s-1, *s };
+	if (wcschr(L"!~.,;(){}$@=<>|&", **s)) return ++*s, lexeme{ *s-1, *s };
 	if (wcschr(L"?-", **s)) ++*s;
 	if (!iswalnum(**s) && **s != L'_') parse_error(*s, err_chr);
 	while (**s && (iswalnum(**s) || **s == L'_')) ++*s;
@@ -147,7 +156,14 @@ bool directive::parse(const lexemes& l, size_t& pos, raw_prog& prog) {
 		parse_error(l[curr2][1], dot_expected, l[curr2]);
 	return true;
 }
-
+elem::etype elem::peek(const lexemes& l, size_t& pos) {
+	
+	size_t curr = pos;
+	type = NONE;
+	if( pos < l.size() ) parse(l,pos);
+	pos = curr;
+	return type;
+}
 bool elem::parse(const lexemes& l, size_t& pos) {
 	if (L'|' == *l[pos][0]) return e = l[pos++],type=ALT,   true;
 	if (L'(' == *l[pos][0]) return e = l[pos++],type=OPENP, true;
@@ -162,6 +178,17 @@ bool elem::parse(const lexemes& l, size_t& pos) {
 		L'=' == l[pos][0][1]) {
 		return e = l[pos++], type = LEQ, true;
 	}
+	if (L'-' == l[pos][0][0] &&
+		L'>' == l[pos][0][1]) {
+		return e = l[pos++], type = IMPLIES, true;
+	}
+
+	if (L'<' == l[pos][0][0] &&
+		L'-' == l[pos][0][1] &&
+		L'>' == l[pos][0][2]) {
+		return e = l[pos++], type = COIMPLIES, true;
+	}
+
 	if (L'>' == l[pos][0][0]) {
 		return e = l[pos++], type = GT, true;
 	}
@@ -170,6 +197,13 @@ bool elem::parse(const lexemes& l, size_t& pos) {
 		if (pos + 1 < l.size() && L'>' == l[pos+1][0][0]) return false;
 		return e = l[pos++], type = EQ, true;
 	}
+	if (L'|' == l[pos][0][0]) {
+		return e = l[pos++], type = OR, true;
+	}
+	if (L'&' == l[pos][0][0]) {
+		return e = l[pos++], type = AND, true;
+	}
+
 	if (!iswalnum(*l[pos][0]) && !wcschr(L"\"'-?", *l[pos][0])) return false;
 	if (e = l[pos], *l[pos][0] == L'\'') {
 		type = CHR, e = { 0, 0 };
@@ -183,7 +217,16 @@ bool elem::parse(const lexemes& l, size_t& pos) {
 		else throw 0;
 	}
 	else if (*l[pos][0] == L'?') type = VAR;
-	else if (iswalpha(*l[pos][0])) type = SYM;
+	else if (iswalpha(*l[pos][0])) {
+		size_t len = l[pos][1]-l[pos][0];
+		if( len == 6 && !wcsncmp(l[pos][0], L"forall", len )) 
+			type = FORALL;
+		else if ( len == 6 && !wcsncmp(l[pos][0], L"exists", len ) )
+			type = EXISTS;
+		else if ( len == 6 && !wcsncmp(l[pos][0], L"unique", len ) )
+			type = UNIQUE;
+		else type = SYM;
+	}
 	else if (*l[pos][0] == L'"') type = STR;
 	else type = NUM, num = get_int_t(l[pos][0], l[pos][1]);
 	return ++pos, true;
@@ -193,9 +236,9 @@ bool raw_term::parse(const lexemes& l, size_t& pos, raw_prog& prog) {
 	size_t curr = pos;
 	lexeme s = l[pos];
 	if ((neg = *l[pos][0] == L'~')) ++pos;
-	bool rel = false, noteq = false, eq = false, leq = false, gt = false,
+	bool rel = false, noteq = false, eq = false, leq = false, gt = false, 
 		bltin = false;
-	while (!wcschr(L".:,;{}", *l[pos][0])) {
+	while (!wcschr(L".:,;{}|&-<", *l[pos][0])) {
 		if (e.emplace_back(), !e.back().parse(l, pos)) return false;
 		else if (pos == l.size())
 			parse_error(input::source[1], err_eof, s[0]);
@@ -298,18 +341,205 @@ head:	h.emplace_back();
 	if (!h.back().parse(l, pos, prog)) return pos = curr, false;
 	if (*l[pos][0] == '.') return ++pos, true;
 	if (*l[pos][0] == ',') { ++pos; goto head; }
-	if (*l[pos][0] != ':' || l[pos][0][1] != L'-')
+	if (*l[pos][0] != ':' || (l[pos][0][1] != L'-' && l[pos][0][1] != L'=' ))
 		parse_error(l[pos][0], err_head, l[pos]);
-	++pos; b.emplace_back();
-	for (	b.back().emplace_back(); b.back().back().parse(l, pos, prog);
-		b.back().emplace_back(), ++pos) {
-		if (*l[pos][0] == '.') return ++pos, true;
-		else if (*l[pos][0] == L';') b.emplace_back();
-		else if (*l[pos][0] != ',')
-			parse_error(l[pos][0], err_term_or_dot,l[pos]);
+	++pos;
+	if(l[pos-1][0][1] == L'=') { //  formula
+		curr = pos; 
+		raw_sof rsof;
+		raw_form_tree * root = NULL;
+		bool ret = rsof.parse(l, pos, root);
+		
+		sprawformtree temp(root);
+		this->prft = temp;
+
+		if(ret) return true;	
+		parse_error(l[pos][0], L"Formula has errors", l[pos]);
+	} else {
+
+		b.emplace_back();
+		for (b.back().emplace_back(); b.back().back().parse(l, pos, prog);
+			b.back().emplace_back(), ++pos) {
+			if (*l[pos][0] == '.') return ++pos, true;
+			else if (*l[pos][0] == L';') b.emplace_back();
+			else if (*l[pos][0] != ',')
+				parse_error(l[pos][0], err_term_or_dot,l[pos]);
+		}
+		parse_error(l[pos][0], err_body, l[pos]);
 	}
-	parse_error(l[pos][0], err_body, l[pos]);
 	return false;
+}
+
+bool raw_prefix::parse(const lexemes& l, size_t& pos) {
+	size_t curr = pos;
+	isfod = false;
+
+	if ( !qtype.parse(l, pos) ) return false;
+	if (qtype.type != elem::FORALL &&  
+		qtype.type != elem::EXISTS && 
+		qtype.type != elem::UNIQUE)
+			return pos = curr, false;
+
+	if (*l[pos][0] == L'?' ) isfod = true;
+
+	if ( !ident.parse(l, pos) ) return false;
+	if ( ident.type != elem::VAR  && ident.type != elem::SYM)
+			return pos = curr, false;
+		
+	return true; 
+} 
+
+bool raw_sof::parsematrix(const lexemes& l, size_t& pos, raw_form_tree *&matroot) {
+
+	size_t curr = pos;
+	raw_form_tree * root = NULL;
+	bool isneg = false;
+
+	if ( pos == l.size() ) return NULL;
+	
+	if( *l[pos][0] == '~') isneg=true,++pos;
+	if( pos != l.size() && *l[pos][0] == '{') {
+		++pos;
+		if( ! parseform(l, pos, root, 0) ) goto Cleanup;
+		if( isneg)
+			root = new raw_form_tree(elem::NOT, NULL, NULL, root);
+
+		if( pos == l.size() && *l[pos][0] != '}') goto Cleanup;
+		++pos;
+
+		matroot = root;
+		return true;
+	}
+	else {  
+
+		elem next;
+		next.peek(l, pos);
+		
+		if( next.type == elem::SYM  ) {
+			
+			raw_term tm;
+			if( !tm.parse(l,pos)) goto Cleanup;
+
+			root = new raw_form_tree(elem::NONE, &tm);
+
+			if( isneg )
+				root = new raw_form_tree(elem::NOT, NULL, NULL, root);
+			
+			matroot = root;
+			return true;
+		}
+		else {
+			raw_form_tree *cur = NULL;
+			while( 	next.type == elem::FORALL ||
+					next.type == elem::UNIQUE ||
+					next.type == elem::EXISTS ) {
+			
+				raw_prefix rpfx;
+
+				if( !rpfx.parse(l,pos) ) goto Cleanup;
+				
+				if(!cur)
+					root = cur = new raw_form_tree ( rpfx.qtype.type, NULL, &rpfx.qtype );
+				else 
+					cur->r = new raw_form_tree ( rpfx.qtype.type, NULL, &rpfx.qtype ), cur = cur->r;
+
+				cur->l = new raw_form_tree ( rpfx.ident.type, NULL, &rpfx.ident );
+
+				next.peek(l, pos);
+			}	
+			
+			if( cur == NULL ||  pos == l.size() || *l[pos][0] != '{')  
+				goto Cleanup;
+			
+			++pos;
+			if(! parseform(l, pos, cur->r, 0)) goto Cleanup;
+
+			if( pos == l.size() || *l[pos][0] != '}') goto Cleanup;
+
+			++pos;
+			if(isneg)
+				root = new raw_form_tree(elem::NOT, NULL, NULL, root);
+			
+			matroot = root;
+			return true;
+		}
+	} 
+
+	Cleanup:
+	//if(root) delete root;
+	matroot = root;
+	return pos=curr, false;
+}
+bool raw_sof::parseform(const lexemes& l, size_t& pos, raw_form_tree *&froot, int_t prec ) {
+
+	size_t curr = pos;
+	raw_form_tree* root = NULL;
+	raw_form_tree* cur = NULL;
+
+	bool ret = parsematrix(l, pos, root);
+	elem nxt;	
+	if ( !ret ) goto Cleanup;	
+	
+	nxt.peek(l, pos);
+	while( prec <=1 && (nxt.type == elem::IMPLIES || nxt.type == elem::COIMPLIES)) {	
+		nxt.parse(l, pos);
+		cur = new raw_form_tree(nxt.type, NULL, &nxt, root);
+		root = cur;
+		if( !parseform(l, pos, root->r, 2) ) goto Cleanup ;
+		nxt.peek(l,pos);
+	}
+
+	nxt.peek(l, pos);
+	while( prec <= 0 && (nxt.type == elem::AND || nxt.type == elem::ALT) ) {
+	
+		nxt.parse(l, pos);
+		cur = new raw_form_tree( nxt.type, NULL, &nxt, root);
+
+		root = cur;
+		if( ! parseform(l, pos, root->r, 1) ) goto Cleanup;
+		nxt.peek(l,pos);
+	
+	} 
+	froot = root;
+	return true;
+	
+	Cleanup:
+	//if(root) delete root;
+	froot = root;
+	return pos=curr, false;
+}
+
+/* Populates root argument by creeating a binary tree of formula.
+	It is caller's responsibility to manage the memory of root. If the parse function,
+	returns false or the root is not needed any more, the caller should delete the root pointer.
+	*/
+bool raw_sof::parse(const lexemes& l, size_t& pos, raw_form_tree *&root) {
+
+	root = NULL;
+	bool ret = parseform(l, pos, root );
+
+	if( pos >= l.size() || *l[pos][0] != '.') ret = false;
+	else pos++;
+	
+	wprintf(L"\n cur = %d tot= %d \n ", pos, l.size());
+
+	return ret;
+}
+ void raw_form_tree::printTree( int level)
+{
+	if( r ) r->printTree(level + 1)	;
+
+	wprintf(L"\n");
+	
+	for(int i=0;i<level;i++)
+		wprintf(L"\t");
+
+	if( type == elem::NOT ) wprintf (L"~");
+	else if( this->rt )
+			for(elem &etemp: rt->e)
+				wprintf(L"%ls ", lexeme2str(etemp.e).c_str());
+	else wprintf(L"%ls ", lexeme2str(el->e).c_str());
+	if( l ) l->printTree( level +1 );
 }
 
 bool production::parse(const lexemes& l, size_t& pos) {
@@ -379,7 +609,7 @@ raw_progs::raw_progs(const std::wstring& s) {
 					err_close_curly, l[pos-1]);
 		} while (pos < l.size());
 	} catch (std::exception &e) {
-		output::to(L"error") << s2ws(e.what()) << std::endl;
+		o::err() << s2ws(e.what()) << std::endl;
 	}
 }
 
