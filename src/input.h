@@ -73,7 +73,7 @@ struct raw_term {
 	bool neg = false, iseq = false, isleq = false, isbltin = false;
 	std::vector<elem> e;
 	ints arity;
-	bool parse(const lexemes& l, size_t& pos, raw_prog& prog);
+	bool parse(const lexemes& l, size_t& pos, const raw_prog& prog);
 	void calc_arity();
 	void insert_parens(lexeme op, lexeme cl);
 	void clear() { e.clear(), arity.clear(); }
@@ -90,7 +90,7 @@ struct directive {
 	raw_term t;
 	int_t n;
 	enum etype { STR, FNAME, CMDLINE, STDIN, STDOUT, TREE, TRACE, BWD }type;
-	bool parse(const lexemes& l, size_t& pos, raw_prog& prog);
+	bool parse(const lexemes& l, size_t& pos, const raw_prog& prog);
 };
 
 struct production {
@@ -110,7 +110,7 @@ struct raw_rule {
 
 	enum etype { NONE, GOAL, TREE };
 	etype type = NONE;
-	bool parse(const lexemes& l, size_t& pos, raw_prog& prog);
+	bool parse(const lexemes& l, size_t& pos, const raw_prog& prog);
 	void clear() { h.clear(), b.clear(), type = NONE; }
 	raw_rule(){}
 	raw_rule(etype type, const raw_term& t) : h({t}), type(type) {}
@@ -171,6 +171,8 @@ struct raw_form_tree {
 	void printTree(int level =0 );
 };
 struct raw_sof {
+	const raw_prog& prog;
+	raw_sof(const raw_prog& prog) :prog(prog) {}
 
 	private:
 	bool parseform(const lexemes& l, size_t& pos, raw_form_tree *&root, int precd= 0);

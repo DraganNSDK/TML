@@ -112,7 +112,7 @@ int_t get_int_t(cws from, cws to) {
 	return neg ? -r : r;
 }
 
-bool directive::parse(const lexemes& l, size_t& pos, raw_prog& prog) {
+bool directive::parse(const lexemes& l, size_t& pos, const raw_prog& prog) {
 	if (*l[pos][0] != '@') return false;
 	if (l[++pos] == L"trace") {
 		type = TRACE;
@@ -232,7 +232,7 @@ bool elem::parse(const lexemes& l, size_t& pos) {
 	return ++pos, true;
 }
 
-bool raw_term::parse(const lexemes& l, size_t& pos, raw_prog& prog) {
+bool raw_term::parse(const lexemes& l, size_t& pos, const raw_prog& prog) {
 	size_t curr = pos;
 	lexeme s = l[pos];
 	if ((neg = *l[pos][0] == L'~')) ++pos;
@@ -331,7 +331,7 @@ void raw_term::calc_arity() {
 	if (dep) parse_error(e[0].e[0], err_paren, e[0].e);
 }
 
-bool raw_rule::parse(const lexemes& l, size_t& pos, raw_prog& prog) {
+bool raw_rule::parse(const lexemes& l, size_t& pos, const raw_prog& prog) {
 	size_t curr = pos;
 	if (*l[pos][0] == L'!') {
 		if (*l[++pos][0] == L'!') ++pos, type = TREE;
@@ -346,7 +346,7 @@ head:	h.emplace_back();
 	++pos;
 	if(l[pos-1][0][1] == L'=') { //  formula
 		curr = pos; 
-		raw_sof rsof;
+		raw_sof rsof(prog);
 		raw_form_tree * root = NULL;
 		bool ret = rsof.parse(l, pos, root);
 		
@@ -418,7 +418,7 @@ bool raw_sof::parsematrix(const lexemes& l, size_t& pos, raw_form_tree *&matroot
 		if( next.type == elem::SYM  ) {
 			
 			raw_term tm;
-			if( !tm.parse(l,pos)) goto Cleanup;
+			if( !tm.parse(l,pos, prog)) goto Cleanup;
 
 			root = new raw_form_tree(elem::NONE, &tm);
 
