@@ -13,7 +13,6 @@
 #include "defs.h"
 
 struct term : public ints {
-	// TODO: enum 'is...' stuff into one
 	bool neg = false, goal = false; // , iseq = false, isleq = false, isbltin;
 	enum textype { REL, EQ, LEQ, BLTIN } extype = term::REL;
 	ntable tab = -1;

@@ -1295,9 +1295,6 @@ void tables::cqc(flat_prog& p) {
 		v.emplace_back(r), cqc_minimize(v.back());
 }*/
 
-//struct natcmp 
-//{ bool operator()(const term& l, const term& r) const { return true; } };
-
 void tables::get_rules(flat_prog p) {
 	bcqc = false;
 	get_facts(p);
@@ -1325,12 +1322,6 @@ void tables::get_rules(flat_prog p) {
 	if (optimize) bdd::gc();
 
 	// BLTINS: set order is important (and wrong) for e.g. REL, BLTIN, EQ
-	//static auto natcmp = [](term& a, term& b) { return true; }; // native order
-	//std::set<term, decltype(natcmp)> s(cmp);
-	//natcmp _nativecmp;
-
-	//map<term, set<set<term>>> m;
-	//map<term, set<set<term, decltype(natcmp)>>> m;
 	map<term, set<term_set>> m;
 	for (const auto& x : p)
 		if (x.size() == 1) m[x[0]] = {};
@@ -1652,7 +1643,6 @@ spbdd_handle tables::alt_query(alt& a, size_t /*DBG(len)*/) {
 			return hfalse;
 		} else v1.push_back(x);
 
-	//spbdd_handle qbltin = bdd_handle::T;
 	if (a.isbltin) {
 		if (a.bltintype == L"count") {
 			//auto xall = bdd_and_many_ex_perm(v1, a.ex, a.perm);
