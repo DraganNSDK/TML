@@ -217,6 +217,9 @@ private:
 	}
 
 	spbdd_handle from_bit(size_t b, size_t arg, size_t args, int_t n) const{
+		// D: last-bit-fix
+		if (b == bits - 1 && (n >> 2 == 0))
+			return ::from_bit(pos(b, arg, args), true);
 		return ::from_bit(pos(b, arg, args), n & (1 << b));
 	}
 	spbdd_handle from_sym(size_t pos, size_t args, int_t i) const;

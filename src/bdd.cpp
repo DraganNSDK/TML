@@ -75,7 +75,7 @@ int_t bdd::add(int_t v, int_t h, int_t l) {
 	DBG(assert(leaf(h) || v < abs(V[abs(h)].v)););
 	DBG(assert(leaf(l) || v < abs(V[abs(l)].v)););
 	//varleaf = max(varleaf, size_t(abs(v) + 1));
-	if (h == l) return h;
+ 	if (h == l) return h;
 	if (abs(h) < abs(l)) swap(h, l), v = -v;
 	static std::unordered_map<bdd_key, int_t>::const_iterator it;
 	static bdd_key k;
@@ -832,24 +832,25 @@ size_t bdd::satcount_perm(const bdd& bx, int_t x, size_t leafvar) {
 #pragma region sat count
 
 static std::set<size_t> ourvars;
-size_t bdd::getvar(const bdd& bx, int_t x, size_t maxvar) {
-	if (leaf(x)) return maxvar; // trueleaf(x) ? 1 : 0;
-	const bdd bhi = get(bx.h), blo = get(bx.l);
-	maxvar = leaf(bx.h) ? maxvar : max(maxvar, getvar(bhi, bx.h, maxvar));
-	maxvar = leaf(bx.l) ? maxvar : max(maxvar, getvar(blo, bx.l, maxvar));
-	maxvar = max(maxvar, size_t(bx.v));
-	ourvars.insert(bx.v);
-	return maxvar;
+size_t bdd::getvar(int_t h, int_t l, int_t v, int_t x, size_t maxv) {
+	if (leaf(x)) return maxv;
+	const bdd bhi = get(h), blo = get(l);
+	maxv = leaf(h) ? maxv : max(maxv, getvar(bhi.h, bhi.l, bhi.v, h, maxv));
+	maxv = leaf(l) ? maxv : max(maxv, getvar(blo.h, blo.l, blo.v, l, maxv));
+	maxv = max(maxv, size_t(v));
+	ourvars.insert(v);
+	return maxv;
 }
 
 size_t bdd::satcount(int_t x) {
 	const bdd bx = get(x);
 	ourvars.clear();
-	size_t leafvar = getvar(bx, x, 0) + 1;
+	size_t leafvar = getvar(bx.h, bx.l, bx.v, x, 0) + 1;
 
 	map<int_t, int_t> inv;
 	int_t ivar = 1;
 	for (auto x : ourvars) {
+		wcout << L"satcount: inv: " << x << L", " << ivar << L" ." << endl;
 		inv.emplace(x, ivar++);
 	}
 	leafvar = ivar;
@@ -862,7 +863,11 @@ size_t bdd::satcount(int_t x) {
 size_t bdd::satcount(const bdd& bx, int_t x, size_t leafvar,
 	map<int_t, int_t>& mapvars) {
 	size_t r = 0;
-	if (leaf(x)) return trueleaf(x) ? 1 : 0;
+	if (leaf(x)) {
+		wcout << L"satcount: leaf: " << x << L", " << bx.h << L", " << bx.l << L", " << bx.v << L" ." << endl;
+		return trueleaf(x) ? 1 : 0;
+	}
+	wcout << L"satcount: enter: " << x << L", " << bx.h << L", " << bx.l << L", " << bx.v << L" ." << endl;
 	const bdd bhi = get(bx.h), blo = get(bx.l);
 	int_t hivar = leaf(bx.h) ? leafvar : mapvars.at(bhi.v); // nvars + 1 - bx.v
 	int_t lovar = leaf(bx.l) ? leafvar : mapvars.at(blo.v);
@@ -870,9 +875,64 @@ size_t bdd::satcount(const bdd& bx, int_t x, size_t leafvar,
 		(1 << (hivar - mapvars.at(bx.v) - 1));
 	r += satcount(blo, bx.l, leafvar, mapvars) *
 		(1 << (lovar - mapvars.at(bx.v) - 1));
+	wcout << L"satcount: r: " << r << L", " << x << L", " << bx.h << L", " << bx.l << L", " << bx.v << L" ." << endl;
+	wcout << L"satcount: low: \t" << bx.l << L", " << blo.h << L", " << blo.l << L", " << lovar << L" ." << endl;
+	wcout << L"satcount: high: \t" << bx.h << L", " << bhi.h << L", " << bhi.l << L", " << hivar << L" ." << endl;
 	return r;
 }
 
+
+
+//static std::set<size_t> ourvars;
+//size_t bdd::getvar(const bdd& bx, int_t x, size_t maxvar) {
+//	if (leaf(x)) return maxvar; // trueleaf(x) ? 1 : 0;
+//	const bdd bhi = get(bx.h), blo = get(bx.l);
+//	maxvar = leaf(bx.h) ? maxvar : max(maxvar, getvar(bhi, bx.h, maxvar));
+//	maxvar = leaf(bx.l) ? maxvar : max(maxvar, getvar(blo, bx.l, maxvar));
+//	maxvar = max(maxvar, size_t(bx.v));
+//	ourvars.insert(bx.v);
+//	return maxvar;
+//}
+//
+//size_t bdd::satcount(int_t x) {
+//	const bdd bx = get(x);
+//	ourvars.clear();
+//	size_t leafvar = getvar(bx, x, 0) + 1;
+//
+//	map<int_t, int_t> inv;
+//	int_t ivar = 1;
+//	for (auto x : ourvars) {
+//		wcout << L"satcount: inv: " << x << L", " << ivar << L" ." << endl;
+//		inv.emplace(x, ivar++);
+//	}
+//	leafvar = ivar;
+//
+//	//size_t newleafvar = ourvars.size() + 1;
+//	return satcount(bx, x, leafvar, inv);
+//}
+//
+//// TODO: optimize/cache, on multiple calls/static, or similar/diff/patterns?
+//size_t bdd::satcount(const bdd& bx, int_t x, size_t leafvar,
+//	map<int_t, int_t>& mapvars) {
+//	size_t r = 0;
+//	if (leaf(x)) { 
+//		wcout << L"satcount: leaf: " << x << L", " << bx.h << L", " << bx.l << L", " << bx.v << L" ." << endl;
+//		return trueleaf(x) ? 1 : 0;
+//	}
+//	wcout << L"satcount: enter: " << x << L", " << bx.h << L", " << bx.l << L", " << bx.v << L" ." << endl;
+//	const bdd bhi = get(bx.h), blo = get(bx.l);
+//	int_t hivar = leaf(bx.h) ? leafvar : mapvars.at(bhi.v); // nvars + 1 - bx.v
+//	int_t lovar = leaf(bx.l) ? leafvar : mapvars.at(blo.v);
+//	r += satcount(bhi, bx.h, leafvar, mapvars) *
+//		(1 << (hivar - mapvars.at(bx.v) - 1));
+//	r += satcount(blo, bx.l, leafvar, mapvars) *
+//		(1 << (lovar - mapvars.at(bx.v) - 1));
+//	wcout << L"satcount: r: " << r << L", " << x << L", " << bx.h << L", " << bx.l << L", " << bx.v << L" ." << endl;
+//	wcout << L"satcount: low: \t" << bx.l << L", " << blo.h << L", " << blo.l << L", " << lovar << L" ." << endl;
+//	wcout << L"satcount: high: \t" << bx.h << L", " << bhi.h << L", " << bhi.l << L", " << hivar << L" ." << endl;
+//	return r;
+//}
+//
 //struct cntinfo {
 //	bool isleaf = false;
 //	int_t x, l, h, var, oldvar, kpvar;
