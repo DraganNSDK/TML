@@ -579,10 +579,10 @@ void tables::decompress(spbdd_handle x, ntable tab, const cb_decompress& f,
 		for (size_t n = 0; n != len; ++n)
 			for (size_t k = 0; k != bits; ++k)
 				if (p[pos(k, n, len)]) {
-					// D: quick fix for the last-bit-0-fix
-					if (k == bits - 1)
-						; // r[n] = 0;
-					else
+					//// D: quick fix for the last-bit-0-fix
+					//if (k == bits - 1)
+					//	; // r[n] = 0;
+					//else
 					r[n] |= 1 << k;
 				}
 		f(r);
@@ -1567,9 +1567,9 @@ void tables::add_prog(flat_prog m, const vector<production>& g, bool mknums) {
 	if (mknums) to_nums(m);
 	rules.clear(), datalog = true;
 	syms = dict.nsyms();
-	// D: add extra 'last-bit' for 0-s, quick test
-	while (max(max(nums, chars), syms) >= (1 << (bits - 3))) add_bit();
-	//while (max(max(nums, chars), syms) >= (1 << (bits - 2))) add_bit();
+	//// D: add extra 'last-bit' for 0-s, quick test
+	//while (max(max(nums, chars), syms) >= (1 << (bits - 3))) add_bit();
+	while (max(max(nums, chars), syms) >= (1 << (bits - 2))) add_bit();
 	for (auto x : strs) load_string(x.first, x.second);
 	transform_grammar(g, m);
 	get_rules(move(m));
