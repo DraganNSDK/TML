@@ -800,7 +800,10 @@ void tables::get_facts(const flat_prog& m) {
 	bdd_handles v;
 	for (auto x : f) {
 		spbdd_handle r = hfalse;
-		for (auto y : x.second) r = r || y;
+		for (auto y : x.second) {
+			r = r || y;
+			//int_t cnt = bdd::satcount(r->b);
+		}
 		tbls[x.first].t = r;
 	}
 	if (optimize) measure_time_end();
@@ -1651,6 +1654,7 @@ spbdd_handle tables::alt_query(alt& a, size_t /*DBG(len)*/) {
 			//spbdd_handle xprmt = bdd_permute_ex(x, blast.ex, blast.perm);
 			//int_t cnt = bdd::satcount_perm(xprmt->b, bits * a.bltinsize + 1);
 			int_t cnt = bdd::satcount(x->b);
+			//int_t cnt1 = bdd::satcount(tbls[0].t->b);
 
 			// just equate last var (output) with the count
 			x = from_sym(a.vm.at(a.bltinout), a.varslen, mknum(cnt));
