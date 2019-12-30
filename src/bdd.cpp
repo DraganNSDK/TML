@@ -860,12 +860,8 @@ size_t bdd::satcount(const bdd& bx, int_t x, size_t leafvar,
 	map<int_t, int_t>& mapvars) {
 	size_t r = 0;
 	if (leaf(x)) {
-		//wcout << L"satcount: leaf: " << x << L", " << bx.h << L", " << bx.l 
-		//	<< L", " << bx.v << L" ." << endl;
 		return trueleaf(x) ? 1 : 0;
 	}
-	//wcout << L"satcount: enter: " << x << L", " << bx.h << L", " << bx.l 
-	//	<< L", " << bx.v << L" ." << endl;
 	const bdd bhi = get(bx.h), blo = get(bx.l);
 	int_t hivar = leaf(bx.h) ? leafvar : mapvars.at(bhi.v); // nvars + 1 - bx.v
 	int_t lovar = leaf(bx.l) ? leafvar : mapvars.at(blo.v);
@@ -873,12 +869,6 @@ size_t bdd::satcount(const bdd& bx, int_t x, size_t leafvar,
 		(1 << (hivar - mapvars.at(bx.v) - 1));
 	r += satcount(blo, bx.l, leafvar, mapvars) *
 		(1 << (lovar - mapvars.at(bx.v) - 1));
-	//wcout << L"satcount: r: " << r << L", " << x << L", " << bx.h << L", " 
-	//	<< bx.l << L", " << bx.v << L" ." << endl;
-	//wcout << L"satcount: low: \t" << bx.l << L", " << blo.h << L", " << blo.l 
-	//	<< L", " << lovar << L" ." << endl;
-	//wcout << L"satcount: high: \t" << bx.h << L", " << bhi.h << L", " << bhi.l 
-	//	<< L", " << hivar << L" ." << endl;
 	return r;
 }
 

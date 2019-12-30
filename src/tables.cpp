@@ -578,13 +578,8 @@ void tables::decompress(spbdd_handle x, ntable tab, const cb_decompress& f,
 		term r(false, term::REL, tab, ints(len, 0), 0);
 		for (size_t n = 0; n != len; ++n)
 			for (size_t k = 0; k != bits; ++k)
-				if (p[pos(k, n, len)]) {
-					//// D: quick fix for the last-bit-0-fix
-					//if (k == bits - 1)
-					//	; // r[n] = 0;
-					//else
+				if (p[pos(k, n, len)])
 					r[n] |= 1 << k;
-				}
 		f(r);
 	})();
 }
@@ -647,9 +642,9 @@ void term::replace(const map<int_t, int_t>& m) {
 }
 
 void align_vars(vector<term>& v) {
-	// D: this is not optimal, vs just to see if it's empty, join w/ below
-	set<int_t> vs;
-	vs.clear();
+	// D: 'vs'? remove it
+	//set<int_t> vs;
+	//vs.clear();
 	map<int_t, int_t> m;
 	for (size_t k = 0; k != v.size(); ++k)
 		for (size_t n = 0; n != v[k].size(); ++n)
@@ -800,10 +795,7 @@ void tables::get_facts(const flat_prog& m) {
 	bdd_handles v;
 	for (auto x : f) {
 		spbdd_handle r = hfalse;
-		for (auto y : x.second) {
-			r = r || y;
-			//int_t cnt = bdd::satcount(r->b);
-		}
+		for (auto y : x.second) r = r || y;
 		tbls[x.first].t = r;
 	}
 	if (optimize) measure_time_end();
@@ -1570,8 +1562,6 @@ void tables::add_prog(flat_prog m, const vector<production>& g, bool mknums) {
 	if (mknums) to_nums(m);
 	rules.clear(), datalog = true;
 	syms = dict.nsyms();
-	//// D: add extra 'last-bit' for 0-s, quick test
-	//while (max(max(nums, chars), syms) >= (1 << (bits - 3))) add_bit();
 	while (max(max(nums, chars), syms) >= (1 << (bits - 2))) add_bit();
 	for (auto x : strs) load_string(x.first, x.second);
 	transform_grammar(g, m);
@@ -1648,13 +1638,10 @@ spbdd_handle tables::alt_query(alt& a, size_t /*DBG(len)*/) {
 
 	if (a.isbltin) {
 		if (a.bltintype == L"count") {
-			//auto xall = bdd_and_many_ex_perm(v1, a.ex, a.perm);
-			//int_t cnt = bdd::satcount(xall->b);
 			//body& blast = *a[a.size() - 1];
 			//spbdd_handle xprmt = bdd_permute_ex(x, blast.ex, blast.perm);
 			//int_t cnt = bdd::satcount_perm(xprmt->b, bits * a.bltinsize + 1);
 			int_t cnt = bdd::satcount(x->b);
-			//int_t cnt1 = bdd::satcount(tbls[0].t->b);
 
 			// just equate last var (output) with the count
 			x = from_sym(a.vm.at(a.bltinout), a.varslen, mknum(cnt));

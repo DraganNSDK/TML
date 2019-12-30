@@ -249,11 +249,9 @@ bool raw_term::parse(const lexemes& l, size_t& pos, const raw_prog& prog) {
 			case elem::LEQ: leq = true; break;
 			case elem::GT: gt = true; break;
 			case elem::SYM: 
-				// str_bltins	
 				if (prog.builtins.find(el.e) != prog.builtins.end()) {
 					el.type = elem::BLTIN;
 					bltin = true;
-					// prog.dict.get_sym(x.p[n].e);
 				}
 				break;
 			default: break;
