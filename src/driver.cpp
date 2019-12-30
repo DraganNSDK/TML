@@ -164,8 +164,8 @@ void driver::prog_run(raw_progs& rp, size_t n, strs_t& strtrees) {
 			output::to(L"transformed")<<L'{'<<endl<<p<<L'}'<<endl;
 //	strtrees.clear(), get_dict_stats(rp.p[n]), add_rules(rp.p[n]);
 	clock_t start, end;
-	tbl = new tables(opts.enabled(L"proof"), true, opts.enabled(L"bin"),
-		opts.enabled(L"t"));
+	tbl = tbl ? tbl : new tables(opts.enabled(L"proof"), true,
+		opts.enabled(L"bin"), opts.enabled(L"t"));
 	if (opts.disabled(L"run")) return;
 	measure_time(tbl->run_prog(rp.p[n], pd.strs));
 //	for (auto x : prog->strtrees_out)
@@ -187,13 +187,15 @@ void driver::init() {
 driver::driver(raw_progs rp, options o) : opts(o) {
 	strs_t strtrees;
 	try {
+		if (!rp.p.size()) return;
 		for (size_t n = 0; n != rp.p.size(); ++n) {
 			prog_run(rp, n, strtrees);
-			DBG(if (opts.enabled(L"o"))
-				tbl->out(o::out() << endl);)
+			DBG(if (opts.enabled(L"o")) {
+				if (n) o::out() << endl;
+				tbl->out(o::out());
+			})
 		}
-		NDBG(if (opts.enabled(L"o"))
-			tbl->out(o::out() << endl);)
+		NDBG(if (opts.enabled(L"o")) tbl->out(o::out());)
 		if (opts.enabled(L"csv")) save_csv();
 	} catch (unsat_exception& e) {
 		o::out() << s2ws(string(e.what())) << endl;
