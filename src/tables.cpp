@@ -199,9 +199,8 @@ term tables::from_raw_term(const raw_term& r, const size_t orderid) {
 	ints t;
 	lexeme l;
 	// skip the first symbol unless it's EQ/NEQ (which has VAR as it's first)
-	if (r.isbltin) {
-	}
-	bool isRel = !(r.iseq || r.isleq || r.isbltin);
+	//if (r.extype == raw_term::BLTIN) { }
+	bool isRel = r.extype == raw_term::REL; //!(r.iseq || r.isleq || r.isbltin);
 	for (size_t n = !isRel ? 0 : 1; n < r.e.size(); ++n)
 		switch (r.e[n].type) {
 			case elem::NUM: t.push_back(mknum(r.e[n].num)); break;
@@ -220,8 +219,10 @@ term tables::from_raw_term(const raw_term& r, const size_t orderid) {
 			default: ;
 		}
 	// ints t is elems (VAR, consts) mapped to unique ints/ids for perms.
-	term::textype extype = r.iseq ? term::EQ :
-		(r.isleq ? term::LEQ : (r.isbltin ? term::BLTIN : term::REL));
+	//term::textype extype = r.iseq ? term::EQ :
+	//	(r.isleq ? term::LEQ : (r.isbltin ? term::BLTIN : term::REL));
+	// D: make sure enums match (should be the same), cast is just to warn.
+	term::textype extype = (term::textype)r.extype;
 	ntable tbl = (extype > term::REL) ? -1 : get_table(get_sig(r));
 	return term(r.neg, extype, tbl, t, orderid);
 }
@@ -618,8 +619,13 @@ raw_term tables::to_raw_term(const term& r) const {
 		rt.e[2] = get_elem(r[1]), rt.arity = {2};
 	else if (r.extype == term::LEQ) //r.isleq)
 		args = 2, rt.e.resize(args + 1), rt.e[0] = get_elem(r[0]),
+		// D: TODO: is this a bug (never used)? for neg it should be > not <= ?
 		rt.e[1] = elem(elem::SYM,dict.get_lexeme(r.neg ? L"<=" : L">")),
 		rt.e[2] = get_elem(r[1]), rt.arity = {2};
+	else if (r.extype == term::LT)
+		args = 2, rt.e.resize(args + 1), rt.e[0] = get_elem(r[0]),
+		rt.e[1] = elem(elem::SYM, dict.get_lexeme(!r.neg ? L"<" : L">=")),
+		rt.e[2] = get_elem(r[1]), rt.arity = { 2 };
 	// TODO: BLTINS: add term::BLTIN handling
 	else {
 		args = tbls.at(r.tab).len, rt.e.resize(args + 1);
@@ -684,16 +690,18 @@ spbdd_handle tables::get_alt_range(const term& h, const term_set& a,
 	std::vector<const term*> eqterms, leqterms;
 	// first pass, just enlist eq terms (that have at least one var)
 	for (const term& t : a) {
-		bool haseq = false, hasleq = false;
+		bool haseq = false, hasleq = false, haslt = false;
 		for (size_t n = 0; n != t.size(); ++n)
 			if (t[n] >= 0) continue;
 			else if (t.extype == term::EQ) haseq = true; // .iseq
 			else if (t.extype == term::LEQ) hasleq = true; // .isleq
+			else if (t.extype == term::LT) haslt = true;
 			else (t.neg ? nvars : pvars).insert(t[n]);
 		// TODO: BLTINS: add term::BLTIN handling
 		// only if iseq and has at least one var
 		if (haseq) eqterms.push_back(&t);
 		else if (hasleq) leqterms.push_back(&t);
+		else if (haslt) leqterms.push_back(&t); // let's try use the same
 	}
 	for (const term* pt : eqterms) {
 		const term& t = *pt;
@@ -1074,7 +1082,7 @@ void tables::get_alt(const term_set& al, const term& h, set<alt>& as) {
 	alt a;
 	set<int_t> vs;
 	set<pair<body, term>> b;
-	spbdd_handle leq = htrue, q;
+	spbdd_handle leq = htrue, lt = htrue, q;
 	pair<body, term> lastbody;
 	a.vm = get_varmap(h, al, a.varslen), a.inv = varmap_inv(a.vm);
 	for (const term& t : al) {
@@ -1138,8 +1146,31 @@ void tables::get_alt(const term_set& al, const term& h, set<alt>& as) {
 					from_sym(a.vm.at(t[1]), a.varslen,t[0]);
 			leq = t.neg ? leq % q : (leq && q);
 		}
+		else if (t.extype == term::LT) { // or actually look at it as ~GTE
+			DBG(assert(t.size() == 2););
+			if (t[0] == t[1]) {
+				if (!t.neg) return;
+				continue;
+			}
+			if (t[0] >= 0 && t[1] >= 0) {
+				if (t.neg == (t[0] < t[1])) return;
+				continue;
+			}
+			if (t[0] < 0 && t[1] < 0)
+				q = leq_var(a.vm.at(t[1]), a.vm.at(t[0]),
+					a.varslen, bits);
+			else if (t[1] < 0)
+				q = leq_const(t[0], a.vm.at(t[1]),
+					a.varslen, bits);
+			else if (t[0] < 0)
+				// v0 >= 1, ~(v0 <= 1) || v0==1.
+				q = htrue % leq_const(t[1],
+					a.vm.at(t[0]), a.varslen, bits) ||
+				from_sym(a.vm.at(t[0]), a.varslen, t[1]);
+			lt = !t.neg ? lt % q : (lt && q);
+		}
 	}
-	a.rng = bdd_and_many({ get_alt_range(h, al, a.vm, a.varslen), leq });
+	a.rng = bdd_and_many({ get_alt_range(h, al, a.vm, a.varslen), leq, lt });
 	static set<body*, ptrcmp<body>>::const_iterator bit;
 	body* y;
 	for (auto x : b) {

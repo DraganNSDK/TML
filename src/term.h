@@ -14,7 +14,7 @@
 
 struct term : public ints {
 	bool neg = false, goal = false; // , iseq = false, isleq = false, isbltin;
-	enum textype { REL, EQ, LEQ, BLTIN } extype = term::REL;
+	enum textype { REL, EQ, LEQ, LT, BLTIN } extype = term::REL;
 	ntable tab = -1;
 	size_t orderid = 0;
 	term() {}
