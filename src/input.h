@@ -33,12 +33,13 @@ struct raw_prog;
 bool operator==(const lexeme& x, const lexeme& y);
 
 static const std::set<std::wstring> str_bltins =
-	{ L"alpha", L"alnum", L"digit", L"space", L"printable", L"count", L"rnd" };
+	{ L"alpha", L"alnum", L"digit", L"space", L"printable", L"count",
+		L"rnd", L"print", L"lprint", L"halt", L"fail" };
 
 struct elem {
 	enum etype {
-		NONE, SYM, NUM, CHR, VAR, OPENP, CLOSEP, ALT, STR, EQ, NEQ, LEQ, GT, 
-		BLTIN, NOT, AND, OR, FORALL, EXISTS, UNIQUE, IMPLIES, COIMPLIES 
+		NONE, SYM, NUM, CHR, VAR, OPENP, CLOSEP, ALT, STR, EQ, NEQ, LEQ, GT, LT,
+		GEQ, BLTIN, NOT, AND, OR, FORALL, EXISTS, UNIQUE, IMPLIES, COIMPLIES
 	} type;
 	int_t num = 0;
 	lexeme e;
@@ -70,7 +71,9 @@ struct elem {
 
 struct raw_term {
 	// TODO: enum 'is...' stuff
-	bool neg = false, iseq = false, isleq = false, isbltin = false;
+	bool neg = false;
+	//bool iseq = false, isleq = false, islt = false, isbltin = false;
+	enum rtextype { REL, EQ, LEQ, BLTIN } extype = raw_term::REL;
 	std::vector<elem> e;
 	ints arity;
 	bool parse(const lexemes& l, size_t& pos, const raw_prog& prog);
@@ -79,7 +82,8 @@ struct raw_term {
 	void clear() { e.clear(), arity.clear(); }
 	bool operator==(const raw_term& t) const {
 		return neg == t.neg && e == t.e && arity == t.arity &&
-			iseq == t.iseq && isleq == t.isleq;
+			extype == t.extype;
+			//iseq == t.iseq && isleq == t.isleq && islt == t.islt;
 		//return neg == t.neg && e == t.e && arity == t.arity;
 	}
 };
@@ -133,25 +137,25 @@ struct raw_prefix {
 		elem qtype;
 		elem ident;
 		bool isfod =false;
-	
+
 	bool parse(const lexemes& l, size_t& pos);
 };
 
 
 struct raw_form_tree {
 	elem::etype type;
-	raw_term *rt; // elem::NONE is used to identify it 
+	raw_term *rt; // elem::NONE is used to identify it
 	elem * el;
 
 	raw_form_tree *l;
 	raw_form_tree *r;
 
-	
+
 
 	raw_form_tree (elem::etype _type, raw_term* _rt = NULL, elem *_el= NULL, raw_form_tree *_l= NULL, raw_form_tree *_r= NULL ) {
-		
+
 		type = _type;
-		if(_rt) 
+		if(_rt)
 			rt = new raw_term(*_rt);
 		else rt = NULL;
 
@@ -209,6 +213,8 @@ void parse_error(std::wstring e, std::wstring s);
 std::wostream& operator<<(std::wostream& os, const directive& d);
 std::wostream& operator<<(std::wostream& os, const elem& e);
 std::wostream& operator<<(std::wostream& os, const raw_term& t);
+std::wostream& operator<<(std::wostream& os,
+	const std::pair<raw_term, std::wstring>& p);
 std::wostream& operator<<(std::wostream& os, const raw_rule& r);
 std::wostream& operator<<(std::wostream& os, const raw_prog& p);
 std::wostream& operator<<(std::wostream& os, const raw_progs& p);

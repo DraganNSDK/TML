@@ -13,17 +13,21 @@
 #include "defs.h"
 
 struct term : public ints {
-	bool neg = false, goal = false; // , iseq = false, isleq = false, isbltin;
+	bool neg = false, goal = false;
 	enum textype { REL, EQ, LEQ, BLTIN } extype = term::REL;
 	ntable tab = -1;
 	size_t orderid = 0;
+	// D: TODO: builtins are very different, handle as a same size union struct?
+	int_t idbltin = -1; // size_t bltinsize;
 	term() {}
 	term(bool neg, textype extype, ntable tab, const ints& args, size_t orderid) 
 		: ints(args), neg(neg), extype(extype), tab(tab), orderid(orderid) {}
+	// builtins .ctor
+	term(bool neg, ntable tab, const ints& args, size_t orderid, int_t idbltin)
+		: ints(args), neg(neg), extype(term::BLTIN), tab(tab), orderid(orderid),
+		idbltin(idbltin) {}
 	bool operator<(const term& t) const {
 		if (neg != t.neg) return neg;
-		//if (iseq != t.iseq) return iseq;
-		//if (isleq != t.isleq) return isleq;
 		//if (extype != t.extype) return extype < t.extype;
 		if (tab != t.tab) return tab < t.tab;
 		if (goal != t.goal) return goal;

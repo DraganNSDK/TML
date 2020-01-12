@@ -42,7 +42,7 @@ template<typename T> struct ptrcmp {
 typedef std::function<void(size_t,size_t,size_t, const std::vector<term>&)>
 	cb_ground;
 
-struct natcmp { 
+struct natcmp {
 	bool operator()(const term& l, const term& r) const {
 		if (l.orderid != r.orderid) return l.orderid < r.orderid;
 		if (l.neg != r.neg) return l.neg;
@@ -85,11 +85,11 @@ struct alt : public std::vector<body*> {
 	std::map<size_t, int_t> inv;
 	std::map<size_t, spbdd_handle> levels;
 //	static std::set<alt*, ptrcmp<alt>> &s;
-	bool isbltin = false; // or bltin_type...
-	int_t bltinout; // TODO: use bltinargs instead
-	size_t bltinsize;
-	lexeme bltintype;
+	//bool isbltin = false; // or bltin_type...
+	//int_t bltinout; // TODO: use bltinargs instead
+	int_t idbltin = -1; //lexeme bltintype;
 	ints bltinargs;
+	size_t bltinsize;
 	bool operator<(const alt& t) const {
 		if (varslen != t.varslen) return varslen < t.varslen;
 		if (rng != t.rng) return rng < t.rng;
@@ -105,6 +105,11 @@ struct rule : public std::vector<alt*> {
 	size_t len;
 	bdd_handles last;
 	term t;
+	// D: optimize this, just store everything for the moment...
+	//bool isbltin = false; // or bltin_type...
+	//int_t idbltin = -1; //lexeme bltintype;
+	//ints bltinargs;
+	//size_t bltinsize;
 	bool operator<(const rule& t) const {
 		if (neg != t.neg) return neg;
 		if (tab != t.tab) return tab < t.tab;
@@ -127,6 +132,9 @@ struct table {
 	std::vector<size_t> r;
 	bool ext = true; // extensional
 	bool unsat = false, tmp = false;
+	int_t idbltin = -1;
+	ints bltinargs; 
+	size_t bltinsize;
 	bool commit(DBG(size_t));
 };
 
@@ -251,7 +259,7 @@ private:
 	body get_body(const term& t, const varmap&, size_t len) const;
 //	void align_vars(std::vector<term>& b) const;
 	spbdd_handle from_fact(const term& t);
-	term from_raw_term(const raw_term&, const size_t orderid = 0);
+	term from_raw_term(const raw_term&, bool ishdr = false, size_t orderid = 0);
 	std::pair<bools, uints> deltail(size_t len1, size_t len2) const;
 	uints addtail(size_t len1, size_t len2) const;
 	spbdd_handle addtail(cr_spbdd_handle x, size_t len1, size_t len2) const;
@@ -259,7 +267,7 @@ private:
 	spbdd_handle alt_query(alt& a, size_t);
 	DBG(vbools allsat(spbdd_handle x, size_t args) const;)
 	void decompress(spbdd_handle x, ntable tab, const cb_decompress&,
-		size_t len = 0) const;
+		size_t len = 0, bool allowbltins = false) const;
 	std::set<term> decompress();
 	std::vector<env> varbdd_to_subs(const alt* a, cr_spbdd_handle v) const;
 	void rule_get_grounds(cr_spbdd_handle& h, size_t rl, size_t level,
@@ -336,10 +344,10 @@ friend struct transformer;
 	term *tm;
 	form *l;
 	form *r;
-	enum ftype { NONE, ATOM, FORALL1, EXISTS1, FORALL2, EXISTS2, UNIQUE1, UNIQUE2, AND, OR, NOT, IMPLIES, COIMPLIES 
+	enum ftype { NONE, ATOM, FORALL1, EXISTS1, FORALL2, EXISTS2, UNIQUE1, UNIQUE2, AND, OR, NOT, IMPLIES, COIMPLIES
 	} type;
 
-	
+
 	form(){
 		type = NONE; l = NULL; r = NULL; arg = 0; tm = NULL;
 	}
@@ -349,7 +357,7 @@ friend struct transformer;
 		if( _t) tm = new term(), *tm = *_t;
 	}
 	bool isquantifier() const {
-		 if( type == form::ftype::FORALL1 || 
+		 if( type == form::ftype::FORALL1 ||
 			 type == form::ftype::EXISTS1 ||
 			 type == form::ftype::UNIQUE1 ||
 			 type == form::ftype::EXISTS2 ||
@@ -376,12 +384,12 @@ struct transformer {
 
 
 struct implic_removal : public transformer {
-	 
+
 	 virtual bool apply(form *&root);
 };
 
 struct demorgan : public transformer {
-	 
+
 
 	bool allow_neg_move_quant =false;
 	bool push_negation( form *&root);
@@ -397,9 +405,9 @@ struct pull_quantifier: public transformer {
 	virtual bool apply( form *&root);
 	virtual bool traverse( form *&root);
 	bool dosubstitution(form * phi, form* end);
-}; 
+};
 struct substitution: public transformer {
-	
+
 	std::map<int_t, int_t> submap_var;
 	std::map<int_t, int_t> submap_sym;
 
@@ -407,16 +415,28 @@ struct substitution: public transformer {
 	void add( int_t oldn, int_t newn) {
 		if(oldn < 0)
 			submap_var[oldn] = newn;
-		else 
+		else
 			submap_sym[oldn] = newn;
 	}
-	
+
 	virtual bool apply(form *&phi);
-	
+
 };
 
 std::wostream& operator<<(std::wostream& os, const vbools& x);
 
 struct unsat_exception : public std::exception {
 	virtual const char* what() const noexcept { return "unsat."; }
+};
+
+struct contradiction_exception : public unsat_exception {
+	virtual const char* what() const noexcept {
+		return "unsat (contradiction).";
+	}
+};
+
+struct infloop_exception : public unsat_exception {
+	virtual const char* what() const noexcept {
+		return "unsat (infinite loop).";
+	}
 };
