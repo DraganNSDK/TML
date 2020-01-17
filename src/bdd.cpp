@@ -555,6 +555,11 @@ void bdd::mark_all(int_t i) {
 		mark_all(hi(i)), mark_all(lo(i)), S.insert(i);
 }
 
+wostream& bdd::stats(wostream& os) {
+	return os << "S: " << S.size() << " V: "<< V.size() <<
+		" AM: " << AM.size() << " C: "<< C.size();
+}
+
 void bdd::gc() {
 	S.clear();
 	for (auto x : bdd_handle::M) mark_all(x.first);
@@ -567,8 +572,7 @@ void bdd::gc() {
 	v1.reserve(S.size());
 	for (size_t n = 0; n < V.size(); ++n)
 		if (has(S, n)) p[n] = v1.size(), v1.emplace_back(move(V[n]));
-	o::inf() << "S: " << S.size() << " V: "<< V.size() <<
-		" AM: " << AM.size() << " C: "<< C.size() << endl;
+	stats(o::inf())<<endl;
 	V = move(v1);
 #define f(i) (i = (i >= 0 ? p[i] ? p[i] : i : p[-i] ? -p[-i] : i))
 	for (size_t n = 2; n < V.size(); ++n) {
@@ -794,7 +798,7 @@ int_t bdd_or_reduce(bdds b) {
 	return bdd::bdd_or(t, bdd_or_reduce(move(x)));
 }
 
-spbdd_handle bdd_or_many(const bdd_handles& v) {
+spbdd_handle bdd_or_many(bdd_handles v) {
 	bdds b(v.size());
 	for (size_t n = 0; n != v.size(); ++n) b[n] = v[n]->b;
 	return bdd_handle::get(bdd_or_reduce(move(b)));
@@ -1038,6 +1042,7 @@ bool leaf(cr_spbdd_handle h) { return bdd::leaf(h->b); }
 bool trueleaf(cr_spbdd_handle h) { return bdd::trueleaf(h->b); }
 wostream& out(wostream& os, cr_spbdd_handle x) { return bdd::out(os, x->b); }
 
+
 size_t std::hash<ite_memo>::operator()(const ite_memo& m) const {
 	return m.hash;
 }
@@ -1061,5 +1066,6 @@ bdd::bdd(int_t v, int_t h, int_t l) : h(h), l(l), v(v) {
 wostream& bdd::out(wostream& os, int_t x) {
 	if (leaf(x)) return os << (trueleaf(x) ? L'T' : L'F');
 	const bdd b = get(x);
-	return out(out(os << b.v << L" ? ", b.h) << L" : ", b.l);
+	//return out(out(os << b.v << L" ? ", b.h) << L" : ", b.l);
+	return out(out(os << b.v << L" ? (", b.h) << L") : (", b.l) << L")";
 }

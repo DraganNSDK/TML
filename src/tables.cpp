@@ -76,6 +76,7 @@ spbdd_handle tables::leq_var(size_t arg1, size_t arg2, size_t args) const {
 	spbdd_handle r = leq_var(arg1, arg2, args, bits);
 	return leqmemo.emplace(x, r), r;
 }
+
 spbdd_handle tables::leq_var(size_t arg1, size_t arg2, size_t args, size_t bit)
 	const {
 	if (!--bit)
@@ -203,7 +204,7 @@ term tables::from_raw_term(const raw_term& r, bool isheader, size_t orderid) {
 	term::textype extype = (term::textype)r.extype;
 	// D: header builtin is treated as rel, but differentiated later (decomp.)
 	bool realrel = extype == term::REL || (extype == term::BLTIN && isheader);
-	// skip the first symbol unless it's EQ/NEQ (which has VAR as it's first)
+	// skip the first symbol unless it's EQ/LEQ/ALU (which has VAR/CONST as 1st)
 	bool isrel = realrel || extype == term::BLTIN;
 	for (size_t n = !isrel ? 0 : 1; n < r.e.size(); ++n)
 		switch (r.e[n].type) {
@@ -211,7 +212,7 @@ term tables::from_raw_term(const raw_term& r, bool isheader, size_t orderid) {
 			case elem::CHR: t.push_back(mkchr(r.e[n].ch)); break;
 			case elem::VAR:
 				++nvars;
-				t.push_back(dict.get_var(r.e[n].e)); 
+				t.push_back(dict.get_var(r.e[n].e));
 				break;
 			case elem::STR:
 				l = r.e[n].e;
@@ -219,9 +220,9 @@ term tables::from_raw_term(const raw_term& r, bool isheader, size_t orderid) {
 				t.push_back(dict.get_sym(dict.get_lexeme(
 					_unquote(lexeme2str(l)))));
 				break;
-			case elem::BLTIN: // no longer used, check and remove...
-				DBG(assert(false););
-				t.push_back(dict.get_bltin(r.e[n].e)); break;
+			//case elem::BLTIN: // no longer used, check and remove...
+			//	DBG(assert(false););
+			//	t.push_back(dict.get_bltin(r.e[n].e)); break;
 			case elem::SYM: t.push_back(dict.get_sym(r.e[n].e));
 			default: ;
 		}
@@ -230,7 +231,7 @@ term tables::from_raw_term(const raw_term& r, bool isheader, size_t orderid) {
 	// D: idbltin name isn't handled above (only args, much like rel-s & tab-s).
 	if (extype == term::BLTIN) {
 		int_t idbltin = dict.get_bltin(r.e[0].e);
-		if (tab > -1) { 
+		if (tab > -1) {
 			// header BLTIN rel w table, save alongside table (for decomp. etc.)
 			tbls[tab].idbltin = idbltin;
 			tbls[tab].bltinargs = t; // if needed, for rule/header (all in tbl)
@@ -239,7 +240,7 @@ term tables::from_raw_term(const raw_term& r, bool isheader, size_t orderid) {
 		}
 		return term(r.neg, tab, t, orderid, idbltin);
 	}
-	return term(r.neg, extype, tab, t, orderid);
+	return term(r.neg, extype, r.alu_op, tab, t, orderid);
 	// ints t is elems (VAR, consts) mapped to unique ints/ids for perms.
 }
 
@@ -595,7 +596,7 @@ void tables::decompress(spbdd_handle x, ntable tab, const cb_decompress& f,
 	allsat_cb(x/*&&ts[tab].t*/, len * bits,
 		[tab, &f, len, this](const bools& p, int_t DBG(y)) {
 		DBG(assert(abs(y) == 1);)
-		term r(false, term::REL, tab, ints(len, 0), 0);
+		term r(false, term::REL, NOP, tab, ints(len, 0), 0);
 		for (size_t n = 0; n != len; ++n)
 			for (size_t k = 0; k != bits; ++k)
 				if (p[pos(k, n, len)])
@@ -698,20 +699,22 @@ varmap tables::get_varmap(const term& h, const T& b, size_t &varslen) {
 
 spbdd_handle tables::get_alt_range(const term& h, const term_set& a,
 	const varmap& vm, size_t len) {
-	set<int_t> pvars, nvars, eqvars, leqvars;
-	std::vector<const term*> eqterms, leqterms;
+	set<int_t> pvars, nvars, eqvars, leqvars, aluvars;
+	std::vector<const term*> eqterms, leqterms, aluterms;
 	// first pass, just enlist eq terms (that have at least one var)
 	for (const term& t : a) {
-		bool haseq = false, hasleq = false;
+		bool haseq = false, hasleq = false, hasalu = false;
 		for (size_t n = 0; n != t.size(); ++n)
 			if (t[n] >= 0) continue;
 			else if (t.extype == term::EQ) haseq = true; // .iseq
 			else if (t.extype == term::LEQ) hasleq = true; // .isleq
+			else if (t.extype == term::ALU) hasalu= true; // .isalu
 			else (t.neg ? nvars : pvars).insert(t[n]);
 		// TODO: BLTINS: add term::BLTIN handling
 		// only if iseq and has at least one var
 		if (haseq) eqterms.push_back(&t);
 		else if (hasleq) leqterms.push_back(&t);
+		else if (hasalu) aluterms.push_back(&t);
 	}
 	for (const term* pt : eqterms) {
 		const term& t = *pt;
@@ -764,13 +767,27 @@ spbdd_handle tables::get_alt_range(const term& h, const term_set& a,
 			leqvars.insert(v1);
 	}
 
+	//XXX: alu support - Work in progress
+	for (const term* pt : aluterms) {
+		const term& t = *pt;
+		assert(t.size() == 3);
+		const int_t v1 = t[0], v2 = t[1], v3 = t[2];
+		if (v1 < 0 && !has(nvars, v1) && !has(pvars, v1))
+			aluvars.insert(v1);
+		if (v2 < 0 && !has(nvars, v2) && !has(pvars, v2))
+			aluvars.insert(v2);
+		if (v3 < 0 && !has(nvars, v3) && !has(pvars, v3))
+			aluvars.insert(v3);
+	}
+
 	for (int_t i : pvars) nvars.erase(i);
 	if (h.neg) for (int_t i : h) if (i < 0)
-		nvars.erase(i), eqvars.erase(i), leqvars.erase(i);
+		nvars.erase(i), eqvars.erase(i), leqvars.erase(i); // aluvars.erase(i);
 	bdd_handles v;
 	for (int_t i : nvars) range(vm.at(i), len, v);
 	for (int_t i : eqvars) range(vm.at(i), len, v);
 	for (int_t i : leqvars) range(vm.at(i), len, v);
+	for (int_t i : aluvars) range(vm.at(i), len, v);
 	if (!h.neg) {
 		set<int_t> hvars;
 		for (int_t i : h) if (i < 0) hvars.insert(i);
@@ -819,7 +836,9 @@ void tables::get_facts(const flat_prog& m) {
 		for (auto y : x.second) r = r || y;
 		tbls[x.first].t = r;
 	}
-	if (optimize) measure_time_end();
+	if (optimize)
+		(o::ms() << L"# get_facts: "),
+		measure_time_end();
 }
 
 void tables::get_nums(const raw_term& t) {
@@ -1095,8 +1114,8 @@ void tables::get_alt(const term_set& al, const term& h, set<alt>& as) {
 	spbdd_handle leq = htrue, q;
 	pair<body, term> lastbody;
 	a.vm = get_varmap(h, al, a.varslen), a.inv = varmap_inv(a.vm);
+
 	for (const term& t : al) {
-		//if (t.size() != 2 || (!t.iseq && !t.isleq && !t.isbltin))
 		if (t.extype == term::REL) {
 			b.insert(lastbody = { get_body(t, a.vm, a.varslen), t });
 		} else if (t.extype == term::BLTIN) {
@@ -1104,19 +1123,19 @@ void tables::get_alt(const term_set& al, const term& h, set<alt>& as) {
 			// TODO: check that last body exists, but should always be present.
 			DBG(assert(lastbody.second.size() > 0););
 			DBG(assert(t.idbltin >= 0););
-			//a.isbltin = true; // TODO: use bltintype instead?
 			a.idbltin = t.idbltin; // store just a dict id, fetch type on spot
 			a.bltinargs = t;
-			//a.bltinout = a.bltinargs.back();
 			// TODO: check that vars match - in number and names too?
-			term& bt = lastbody.second;
 			// this is only relevant for 'count'? use size differently per type
+			term& bt = lastbody.second;
 			a.bltinsize = count_if(bt.begin(), bt.end(),
 				[](int i) { return i < 0; });
-			// assert no longer T if we have mix of vars and consts.
-			//DBG(assert(a.bltinsize == t.size() - 1);); // BLTIN (1st) + ?out
-			//a.bltintype = dict.get_bltin(t[0]); //dict.get_bltin(t.idbltin);
-		} else if (t.extype == term::EQ) { //.iseq
+		} else if (t.extype == term::ALU) {
+			//returning bdd handler on leq variable
+			if (!isalu_handler(t,a,leq)) return;
+			continue;
+		}
+		else if (t.extype == term::EQ) { //.iseq
 			DBG(assert(t.size() == 2););
 			if (t[0] == t[1]) {
 				if (t.neg) return;
@@ -1144,12 +1163,35 @@ void tables::get_alt(const term_set& al, const term& h, set<alt>& as) {
 				if (t.neg == (t[0] <= t[1])) return;
 				continue;
 			}
-			if (t[0] < 0 && t[1] < 0)
+			if (t[0] < 0 && t[1] < 0) {
 				q = leq_var(a.vm.at(t[0]), a.vm.at(t[1]),
 					a.varslen, bits);
+
+			}
 			else if (t[0] < 0)
-				q = leq_const(t[1], a.vm.at(t[0]),
-					a.varslen, bits);
+				q = leq_const(t[1], a.vm.at(t[0]), a.varslen, bits);
+			/*
+			//XXX:replacement of leq_const by leq_var, needs further test and cleanup
+			else if (t[0] < 0) {
+				size_t args = t.size();
+				spbdd_handle aux = from_sym(1, args, t[1]);
+				q = leq_var(a.vm.at(t[0]), a.vm.at(t[0])+1, a.varslen+1, bits, aux);
+
+				bools exvec;
+				for (size_t i = 0; i < bits; ++i) {
+					exvec.push_back(false);
+					exvec.push_back(true);
+				}
+				q = q/exvec;
+
+				uints perm1;
+				perm1 = perm_init(2*bits);
+				for (size_t i = 1; i < bits; ++i) {
+					perm1[i*2] = perm1[i*2]-i ;
+				}
+				q = q^perm1;
+			}
+			*/
 			else if (t[1] < 0)
 				// 1 <= v1, v1 >= 1, ~(v1 <= 1) || v1==1.
 				q = htrue % leq_const(t[0],
@@ -1159,6 +1201,7 @@ void tables::get_alt(const term_set& al, const term& h, set<alt>& as) {
 		}
 		// we use LT/GEQ <==> LEQ + reversed args + !neg
 	}
+
 	a.rng = bdd_and_many({ get_alt_range(h, al, a.vm, a.varslen), leq });
 	static set<body*, ptrcmp<body>>::const_iterator bit;
 	body* y;
@@ -1357,15 +1400,8 @@ void tables::get_rules(flat_prog p) {
 		tbls[t.tab].ext = false;
 		varmap v;
 		r.neg = t.neg, r.tab = t.tab, r.eq = htrue, r.t = t;
-		if (t.extype == term::BLTIN) { // ...bltin and it's a header
-			// D: moved to table instead, as it's what we need the most really
-			// D: just store everything for the moment, not sure what'll need...
-			// satcount decompress
-			//r.idbltin = t.idbltin; // r.bltintype = dict.get_bltin(t.idbltin);
-			//r.bltinargs = t;
-			//r.bltinsize = count_if(t.begin(), t.end(),
-			//	[](int i) { return i < 0; });
-		}
+		// D: bltin and a header (moved to table instead, it's what we need)
+		//if (t.extype == term::BLTIN) {}
 		for (size_t n = 0; n != t.size(); ++n)
 			if (t[n] >= 0) get_sym(t[n], n, t.size(), r.eq);
 			else if (v.end()==(it=v.find(t[n]))) v.emplace(t[n], n);
@@ -1409,7 +1445,7 @@ void tables::load_string(lexeme r, const wstring& s) {
 	}
 	clock_t start, end;
 	if (optimize)
-		(o::dbg()<<"load_string or_many: "),
+		(o::ms()<<"# load_string or_many: "),
 		measure_time_start();
 	tbls[get_table({rel, ar})].t = bdd_or_many(move(b1)),
 	tbls[get_table({rel, {3}})].t = bdd_or_many(move(b2));
@@ -1668,7 +1704,7 @@ spbdd_handle tables::alt_query(alt& a, size_t /*DBG(len)*/) {
 			return hfalse;
 		} else v1.push_back(x);
 
-	if (a.idbltin > -1) { //a.isbltin) {
+	if (a.idbltin > -1) {
 		lexeme bltintype = dict.get_bltin(a.idbltin);
 		int_t bltinout = a.bltinargs.back(); // for those that have ?out
 		if (bltintype == L"count") {
@@ -1705,10 +1741,10 @@ spbdd_handle tables::alt_query(alt& a, size_t /*DBG(len)*/) {
 			// D: args are now [0,1,...] (we no longer have the bltin as 0 arg)
 			if (a.bltinargs.size() >= 2) ++n,
 				ou = lexeme2str(dict.get_sym(a.bltinargs[0]));
-			wostream& os = wcout; // output::to(ou);
+			wostream& os = output::to(ou);
 			do {
 				int_t arg = a.bltinargs[n++];
-				if      (arg < 0) os << L"pr_v:" << get_var_lexeme(arg) << endl;
+				if      (arg < 0) os << get_var_lexeme(arg) << endl;
 				else if (arg & 1) os << (wchar_t)(arg >> 2);
 				else if (arg & 2) os << (int_t)  (arg >> 2);
 				else              os << dict.get_sym(arg);
@@ -1751,11 +1787,7 @@ bool table::commit(DBG(size_t /*bits*/)) {
 
 char tables::fwd() noexcept {
 //	DBG(out(o::out()<<"db before:"<<endl);)
-	//map<ntable, size_t> mtrules;
-	//for (rule& r : rules) {
-	for (size_t ir = 0; ir < rules.size(); ++ir) {
-		rule& r = rules[ir];
-		//mtrules[r.tab] = ir;
+	for (rule& r : rules) {
 		bdd_handles v(r.size());
 		for (size_t n = 0; n != r.size(); ++n)
 			v[n] = alt_query(*r[n], r.len);
@@ -1770,14 +1802,11 @@ char tables::fwd() noexcept {
 	bool b = false;
 	// D: just temp ugly static, move this out of fwd/pass in, or in tables.
 	static map<ntable, set<term>> mhits;
-	//for (auto& t : tbls) {
 	for (ntable tab = 0; (size_t)tab != tbls.size(); ++tab) {
 		table& tbl = tbls[tab];
 		bool changes = tbl.commit(DBG(bits));
-		b |= changes; // tbl.commit(DBG(bits));
+		b |= changes;
 		if (!changes && tbl.idbltin > -1) {
-			// && mtrules.end() != mtrules.find(tab))
-			//rule& r = rules[mtrules[tab]];
 			//lexeme bltintype = dict.get_bltin(tbl.idbltin);
 			set<term>& ts = mhits[tab];
 			bool ishalt = false, isfail = false;
@@ -1787,7 +1816,6 @@ char tables::fwd() noexcept {
 					// ...we have a new hit
 					ts.insert(t);
 					// do what we have to do, we have a new tuple
-					// "lprint": L"print"
 					lexeme bltintype = dict.get_bltin(tbl.idbltin);
 					if (bltintype == L"lprint") {
 						wostream& os = wcout << endl;
@@ -1808,15 +1836,12 @@ char tables::fwd() noexcept {
 						os << L"program fail: " << rtp << L'.' << endl;
 					}
 				}
-			}, 0, true); 
+			}, 0, true);
 			// 'true' to allow decompress to handle builtins too
 			if (isfail) return unsat = true; // to throw exception, TODO:
 			if (ishalt) return false;
 		}
 		if (tbl.unsat) return unsat = true;
-		//decompress(x&&tbls.at(tab).t, tab, [f, this](const term& r) {
-		//	f(to_raw_term(r)); });
-		//out(x, tab, [&os](const raw_term& rt) { os << rt << L'.' << endl; });
 	}
 	return b;
 /*	if (!b) return false;
@@ -1833,7 +1858,7 @@ level tables::get_front() const {
 	return r;
 }
 
-bool tables::pfp(size_t nsteps) {
+bool tables::pfp(size_t nsteps, size_t break_on_step) {
 	set<level> s;
 	if (bproof) levels.emplace_back(get_front());
 	level l;
@@ -1841,10 +1866,11 @@ bool tables::pfp(size_t nsteps) {
 	for (;;) {
 		if (optimize) o::inf() << L"step: " << nstep << endl;
 		++nstep;
-		if (!fwd()) return sp(), true;
+		if (!fwd()) return sp(), true; // FP found
 		if (unsat) sp(), throw contradiction_exception();
 		// sp(); // show proofs after each step?
-		if (nsteps && nstep == nsteps) return true;
+		if ((break_on_step && nstep == break_on_step) ||
+			(nsteps && nstep == nsteps)) return false; // no FP yet
 		l = get_front();
 		if (!datalog && !s.emplace(l).second)
 			sp(), throw infloop_exception();
@@ -1853,21 +1879,22 @@ bool tables::pfp(size_t nsteps) {
 	throw 0;
 }
 
-bool tables::run_prog(const raw_prog& p, const strs_t& strs) {
+bool tables::run_prog(const raw_prog& p, const strs_t& strs, size_t steps,
+	size_t break_on_step)
+{
 	clock_t start, end;
 	double t;
-	// o::err() << L"add_prog: ";
 	if (optimize) measure_time_start();
 	add_prog(p, strs);
 	if (optimize) {
 		end = clock(), t = double(end - start) / CLOCKS_PER_SEC;
-		o::inf() << L"pfp: ";
+		o::inf() << L"# pfp: ";
 		measure_time_start();
 	}
-	// o::err()
-	bool r = pfp();
+	bool r = pfp(steps ? nstep + steps : 0, break_on_step);
 	if (optimize)
-		(o::inf() <<L"add_prog: "<<t << L" pfp: "), measure_time_end();
+		(o::ms() <<L"add_prog: "<<t << L" pfp: "),
+		measure_time_end();
 	return r;
 }
 

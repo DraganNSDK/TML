@@ -18,6 +18,7 @@
 #include <unordered_map>
 #include <array>
 #include <iostream>
+#include <iomanip>
 #include <cstdio>
 #include <map>
 
@@ -60,7 +61,9 @@ typedef size_t nlevel;
 #define hasbc(x, y, f) std::binary_search(x.begin(), x.end(), y, f)
 #define measure_time_start() start = clock()
 #define measure_time_end() end = clock(), \
-		o::inf() << double(end - start) / CLOCKS_PER_SEC << endl
+		o::ms() << std::fixed << std::setprecision(2) << \
+		(double(end - start) / CLOCKS_PER_SEC) * 1000 \
+		<< L" ms" << endl
 #define measure_time(x) measure_time_start(); x; measure_time_end()
 #define elem_openp elem(elem::OPENP, get_lexeme(L"("))
 #define elem_closep elem(elem::CLOSEP, get_lexeme(L")"))
@@ -70,12 +73,19 @@ template<typename T> T sort(const T& x){T t=x;return sort(t.begin(),t.end()),t;}
 void parse_error(std::wstring e, lexeme l);
 std::wstring s2ws(const std::string&);
 std::string  ws2s(const std::wstring&);
+
 namespace o { // call driver::init() before using any o::xxx() wostream
 	std::wostream& out(); // for program output (in tml facts)
 	std::wostream& err(); // for errors
 	std::wostream& inf(); // for info (for debugging in Release)
 	std::wostream& dbg(); // for debugging (point to null if not Debug)
-	std::wostream& repl(); // for REPL prompt
+	std::wostream& repl();// for REPL
+	std::wostream& ms();  // benchmarks output for time measurings
 }
+
+typedef enum  {
+	NOP, ADD, SUB, MULT, BITWOR, BITWAND, BITWXOR, SHR, SHL
+} t_alu_op;
+
 #endif
 //#define TRANSFORM_BIN_DRIVER
