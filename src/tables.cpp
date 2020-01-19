@@ -153,13 +153,32 @@ void tables::add_bit() {
 //map<ekmemo, spbdd_handle> ememo;
 //map<ekmemo, spbdd_handle> leqmemo;
 
-spbdd_handle tables::from_sym(size_t pos, size_t args, int_t i) const {
+spbdd_handle tables::from_sym(size_t arg, size_t args, int_t i) const {
 	static skmemo x;
 	static map<skmemo, spbdd_handle>::const_iterator it;
-	if ((it = smemo.find(x = { i, pos, args, bits })) != smemo.end())
+	if ((it = smemo.find(x = { i, arg, args, bits })) != smemo.end())
 		return it->second;
 	spbdd_handle r = htrue;
-	for (size_t b = 0; b != bits; ++b) r = r && from_bit(b, pos, args, i);
+	for (size_t b = 0; b != bits; ++b) r = r && from_bit(b, arg, args, i);
+	return smemo.emplace(x, r), r;
+}
+
+/*
+1) arg, args most often relates to alt's vm/varslen
+2) or to table's facts (fact terms)
+3) or to body term (get_body)
+*/
+spbdd_handle tables::from_sym(size_t arg, size_t args, int_t i,
+	const bitsmeta& bm) const {
+	static skmemo x;
+	static map<skmemo, spbdd_handle>::const_iterator it;
+	size_t bits = bm.vbits[arg]; // D: this is now variable 'bits' (per arg)
+	if ((it = smemo.find(x = { i, arg, args, bits })) != smemo.end())
+		return it->second;
+	spbdd_handle r = htrue;
+	size_t lsum = bm.leftbits(arg, args); // precalculate, same for all bits
+	for (size_t b = 0; b != bits; ++b) 
+		r = r && from_bit(b, arg, args, i, bm, lsum);
 	return smemo.emplace(x, r), r;
 }
 
@@ -182,8 +201,11 @@ spbdd_handle tables::from_fact(const term& t) {
 	static varmap vs;
 	vs.clear();
 	auto it = vs.end();
+	// D: we need table for any bdd ops (e.g. from_sym etc.)
+	DBG(assert(t.tab != -1););
+	table tbl = tbls[t.tab];
 	for (size_t n = 0, args = t.size(); n != args; ++n)
-		if (t[n] >= 0) r = r && from_sym(n, args, t[n]);
+		if (t[n] >= 0) r = r && from_sym(n, args, t[n], tbl.bm);
 		else if (vs.end() != (it = vs.find(t[n])))
 			r = r && from_sym_eq(n, it->second, args);
 		else if (vs.emplace(t[n], n), !t.neg)
@@ -197,7 +219,7 @@ sig tables::get_sig(const lexeme& rel, const ints& arity) {
 }
 
 term tables::from_raw_term(const raw_term& r, bool isheader, size_t orderid) {
-	ints t;
+	ints t, types;
 	lexeme l;
 	size_t nvars = 0;
 	// D: make sure enums match (should be the same), cast is just to warn.
@@ -208,26 +230,47 @@ term tables::from_raw_term(const raw_term& r, bool isheader, size_t orderid) {
 	bool isrel = realrel || extype == term::BLTIN;
 	for (size_t n = !isrel ? 0 : 1; n < r.e.size(); ++n)
 		switch (r.e[n].type) {
-			case elem::NUM: t.push_back(mknum(r.e[n].num)); break;
-			case elem::CHR: t.push_back(mkchr(r.e[n].ch)); break;
+			case elem::NUM: 
+				t.push_back(mknum(r.e[n].num)); 
+				types.push_back(-1); // D: num/const could have :int[10] ?
+				// D: TODO: find the right type based on all matching/tbl terms.
+				break;
+			case elem::CHR: 
+				t.push_back(mkchr(r.e[n].ch)); 
+				types.push_back(-1);
+				// D: TODO: find the right type based on all matching/tbl terms.
+				break;
 			case elem::VAR:
-				++nvars;
+				// D: dillema is how/where to store types, just for vars? ints?
+				// we need all args types, even if inferred (or default). Types
+				// need to match across facts, terms (e.g. for same table). It's
+				// not simple, min is vars (we don't want empty vector of -1-s).
+				if (n+1 < r.e.size() && r.e[n+1].type == elem::ARGTYP)
+					types.push_back(dict.get_type(r.e[n+1].e));
+					//types[nvars] = dict.get_type(r.e[n+1].e); // if just vars
+				else
+					types.push_back(-1);
 				t.push_back(dict.get_var(r.e[n].e));
+				++nvars;
 				break;
 			case elem::STR:
 				l = r.e[n].e;
 				++l[0], --l[1];
 				t.push_back(dict.get_sym(dict.get_lexeme(
 					_unquote(lexeme2str(l)))));
+				types.push_back(-1);
 				break;
-			//case elem::BLTIN: // no longer used, check and remove...
-			//	DBG(assert(false););
-			//	t.push_back(dict.get_bltin(r.e[n].e)); break;
-			case elem::SYM: t.push_back(dict.get_sym(r.e[n].e));
+			case elem::SYM: 
+				t.push_back(dict.get_sym(r.e[n].e));
+				types.push_back(-1);
 			default: ;
 		}
 	// stronger 'realrel' condition for tables, only REL and header BLTIN
 	ntable tab = realrel ? get_table(get_sig(r)) : -1;
+	// D: this is to register term args/types for this table (to match/merge).
+	if (tab != -1)
+		tbls[tab].bm.setargs(t, types, dict);
+	
 	// D: idbltin name isn't handled above (only args, much like rel-s & tab-s).
 	if (extype == term::BLTIN) {
 		int_t idbltin = dict.get_bltin(r.e[0].e);
@@ -236,11 +279,10 @@ term tables::from_raw_term(const raw_term& r, bool isheader, size_t orderid) {
 			tbls[tab].idbltin = idbltin;
 			tbls[tab].bltinargs = t; // if needed, for rule/header (all in tbl)
 			tbls[tab].bltinsize = nvars; // number of vars (<0)
-			//count_if(t.begin(), t.end(), [](int i) { return i < 0; });
 		}
-		return term(r.neg, tab, t, orderid, idbltin);
+		return term(r.neg, tab, t, types, orderid, idbltin);
 	}
-	return term(r.neg, extype, r.alu_op, tab, t, orderid);
+	return term(r.neg, extype, r.alu_op, tab, t, types, orderid);
 	// ints t is elems (VAR, consts) mapped to unique ints/ids for perms.
 }
 
@@ -596,7 +638,7 @@ void tables::decompress(spbdd_handle x, ntable tab, const cb_decompress& f,
 	allsat_cb(x/*&&ts[tab].t*/, len * bits,
 		[tab, &f, len, this](const bools& p, int_t DBG(y)) {
 		DBG(assert(abs(y) == 1);)
-		term r(false, term::REL, NOP, tab, ints(len, 0), 0);
+		term r(false, term::REL, NOP, tab, ints(len, 0), ints(len, -1), 0);
 		for (size_t n = 0; n != len; ++n)
 			for (size_t k = 0; k != bits; ++k)
 				if (p[pos(k, n, len)])
@@ -812,9 +854,11 @@ body tables::get_body(const term& t, const varmap& vm, size_t len) const {
 	b.q = htrue, b.ex = bools(t.size() * bits, false);
 	varmap m;
 	auto it = m.end();
+	DBG(assert(t.tab != -1););
+	table tbl = tbls[t.tab];
 	for (size_t n = 0; n != t.size(); ++n)
 		if (t[n] >= 0)
-			b.q = b.q && from_sym(n, t.size(), t[n]),
+			b.q = b.q && from_sym(n, t.size(), t[n], tbl.bm),
 			get_var_ex(n, t.size(), b.ex);
 		else if (m.end() == (it = m.find(t[n]))) m.emplace(t[n], n);
 		else	b.q = b.q && from_sym_eq(n, it->second, t.size()),
@@ -1115,6 +1159,7 @@ void tables::get_alt(const term_set& al, const term& h, set<alt>& as) {
 	pair<body, term> lastbody;
 	a.vm = get_varmap(h, al, a.varslen), a.inv = varmap_inv(a.vm);
 
+	// D: TODO: make alt's bitmeta vbits, vargs (for alt specific args/bdds).
 	for (const term& t : al) {
 		if (t.extype == term::REL) {
 			b.insert(lastbody = { get_body(t, a.vm, a.varslen), t });
@@ -1434,9 +1479,16 @@ void tables::load_string(lexeme r, const wstring& s) {
 	term t;
 	bdd_handles b1, b2;
 	b1.reserve(s.size()), b2.reserve(s.size()), t.resize(3);
+	// D: we have all for get_table and we now need it before from_fact/from_sym
+	ntable tab1 = get_table({rel, ar});
+	ntable tab2 = get_table({rel, {3}});
 	for (int_t n = 0; n != (int_t)s.size(); ++n) {
+		// D: from_fact called on a temp term, w no table? do get_table before.
+		// a temp hack (to inject tab), do this properly, separate terms etc.
+		t.tab = tab1;
 		t[0] = mknum(n), t[1] = mkchr(s[n]), t[2] = mknum(n + 1),
 		b1.push_back(from_fact(t)), t[1] = t[0];
+		t.tab = tab2;
 		if (iswspace(s[n])) t[0] = sspace, b2.push_back(from_fact(t));
 		if (iswdigit(s[n])) t[0] = sdigit, b2.push_back(from_fact(t));
 		if (iswalpha(s[n])) t[0] = salpha, b2.push_back(from_fact(t));
@@ -1447,8 +1499,11 @@ void tables::load_string(lexeme r, const wstring& s) {
 	if (optimize)
 		(o::ms()<<"# load_string or_many: "),
 		measure_time_start();
-	tbls[get_table({rel, ar})].t = bdd_or_many(move(b1)),
-	tbls[get_table({rel, {3}})].t = bdd_or_many(move(b2));
+	// D: move get_table above, we now need table for all bdd ops (from_sym)
+	tbls[tab1].t = bdd_or_many(move(b1)),
+	tbls[tab2].t = bdd_or_many(move(b2));
+	//tbls[get_table({rel, ar})].t = bdd_or_many(move(b1)),
+	//tbls[get_table({rel, {3}})].t = bdd_or_many(move(b2));
 	if (optimize) measure_time_end();
 }
 
@@ -1472,6 +1527,10 @@ ntable tables::get_table(const sig& s) {
 	size_t len = sig_len(s);
 	max_args = max(max_args, len);
 	table tb;
+	// D: TODO: better init vectors here (we have size or even input types)
+	//tb.types = ints(len, -1);
+	//tb.vbits = vector<size_t>(len, 0);
+	//tb.vargs = vector<size_t>(len, 0);
 	return	tb.t = hfalse, tb.s = s, tb.len = len,
 		tbls.push_back(tb), smap.emplace(s,nt), nt;
 }
@@ -1784,6 +1843,43 @@ bool table::commit(DBG(size_t /*bits*/)) {
 //	DBG(assert(bdd_nvars(x) < len*bits);)
 	return x != t && (t = x, true);
 }
+
+bool bitsmeta::setargs(const ints& args, const ints& vtypes, const dict_t& dict) {
+	DBG(assert(vtypes.size() > 0);); // don't setargs if nothing to do
+	DBG(assert(args.size() == vtypes.size()););
+	if (types.size() == 0) {
+		types = vtypes;
+		vbits = vector<size_t>(types.size(), 0);
+		vargs = vector<size_t>(types.size(), 0);
+		for (size_t i = 0; i != types.size(); ++i) {
+			if (types[i] != -1) {
+				ttype t = dict.get_type(types[i]);
+				vbits[i] = t.bits;
+			}
+			vargs[i] = i; // natural ordering by default
+		}
+	} else {
+		DBG(assert(types.size() == vtypes.size()););
+		for (size_t i = 0; i != types.size(); ++i) {
+			if (vtypes[i] != -1) {
+				if (types[i] == -1) {
+					types[i] = vtypes[i];
+					ttype t = dict.get_type(types[i]);
+					vbits[i] = t.bits;
+				}
+				else {
+					ttype t1 = dict.get_type(types[i]);
+					ttype t2 = dict.get_type(vtypes[i]);
+					DBG(assert(t1.bt == t2.bt);); // base types need to match
+					if (t2.bits > t1.bits) t1.bits = t2.bits; // update if more bits
+					vbits[i] = t1.bits;
+				}
+			}
+		}
+	}
+	return true;
+}
+
 
 char tables::fwd() noexcept {
 //	DBG(out(o::out()<<"db before:"<<endl);)

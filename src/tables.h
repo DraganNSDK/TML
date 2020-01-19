@@ -78,6 +78,30 @@ struct body {
 	}
 };
 
+// D: TODO: this is a temp fix to bring table/alt to share data, pass around.
+// I'd rather do this by making pos and methods be part of alt/table, or similar
+struct bitsmeta {
+	ints types;
+	std::vector<size_t> vbits;
+	std::vector<size_t> vargs;
+	bool setargs(const ints& args, const ints& vtypes, const dict_t& dict);
+	//	std::vector<size_t> vbits, std::vector<size_t> vargs,
+	// , const bitsmeta& bm
+	inline size_t leftbits(size_t arg, size_t args) const {
+		DBG(assert(arg < args););
+		// we can improve this by keeping vector of sums also, if needed
+		// (then it won't be const, cache here as served)
+		size_t lsum = 0;
+		for (size_t i = 0; i != args; ++i) {
+			if (vargs[i] == arg) break;
+			lsum += vbits[vargs[i]];
+			DBG(assert(i != args - 1);); // need to exit earlier
+		}
+		return lsum;
+	}
+
+};
+
 struct alt : public std::vector<body*> {
 	spbdd_handle rng = htrue, eq = htrue, rlast = hfalse;
 	size_t varslen;
@@ -92,6 +116,7 @@ struct alt : public std::vector<body*> {
 	int_t idbltin = -1; //lexeme bltintype;
 	ints bltinargs;
 	size_t bltinsize;
+	bitsmeta bm;
 	bool operator<(const alt& t) const {
 		if (varslen != t.varslen) return varslen < t.varslen;
 		if (rng != t.rng) return rng < t.rng;
@@ -132,6 +157,11 @@ struct table {
 	int_t idbltin = -1;
 	ints bltinargs;
 	size_t bltinsize;
+	bitsmeta bm;
+	//ints types;
+	//std::vector<size_t> vbits;
+	//std::vector<size_t> vargs;
+	//bool setargs(const ints& args, const ints& vtypes, const dict_t& dict);
 	bool commit(DBG(size_t));
 };
 
@@ -214,6 +244,47 @@ private:
 		return (bits - bit_from_right - 1) * args + arg;
 	}
 
+	// std::vector<size_t> vbits, std::vector<size_t> vargs, 
+	/*
+	This is the ordered variable-bits pos
+	(it's static atm but we should make this part of alt or table)
+	- vbits - contains variable 'bits' # for each of the arg (needed to calc.)
+	- vargs - vector of arg-s ordered (has to contain all args, no duplicates)
+	- lsum - sum of all the bits 'on the left' (to optimize, same for all bit-s)
+	*/
+	inline static size_t pos(size_t bit, size_t arg, size_t args, 
+		const bitsmeta& bm, size_t lsum = 0) { // const 
+		DBG(assert(bit < bm.vbits[arg] && arg < args););
+		if (lsum == 0 && arg != bm.vargs[0])
+			lsum = bm.leftbits(arg, args); // bm.vbits, bm.vargs
+		return lsum + (bm.vbits[arg] - bit - 1);
+	}
+
+	/*
+	This is the new variable-bits pos
+	- varbits - contains variable 'bits' for each of the arg (needed to calc.)
+	- lsum - sum of all the bits 'on the left' (to optimize, same for all bit-s)
+	*/
+	inline static size_t pos(
+		size_t bit, std::vector<size_t> varbits, 
+		size_t arg, size_t args, size_t lsum = 0) { // const 
+		DBG(assert(bit < varbits[arg] && arg < args););
+		// we can improve this by keeping vector of sums also, if needed
+		if (lsum == 0 && arg != 0)
+			for (size_t i = 0; i != arg; ++i) lsum += varbits[i];
+		return lsum + (varbits[arg] - bit - 1);
+		// for 'args-first', we'd need to iter bit by bit, count arg-s that have 
+		// that bit etc., it's not worth it, I'd suggest the above (bits-first).
+		//size_t argsum = 0;
+		//for (size_t b = 0; b != bit; ++b) { // bit < varbits[arg]
+		//	size_t nargs = 0;
+		//	// order and optimize this (if worth it)
+		//	for (size_t i = 0; i != args; ++i) if (varbits[i] > b) ++nargs;
+		//	argsum += nargs;
+		//}
+		//return argsum + arg;
+	}
+
 	size_t arg(size_t v, size_t args) const {
 		return v % args;
 	}
@@ -225,7 +296,13 @@ private:
 	spbdd_handle from_bit(size_t b, size_t arg, size_t args, int_t n) const{
 		return ::from_bit(pos(b, arg, args), n & (1 << b));
 	}
-	spbdd_handle from_sym(size_t pos, size_t args, int_t i) const;
+	spbdd_handle from_bit(size_t bit, size_t arg, size_t args, int_t n,
+		const bitsmeta& bm, size_t lsum) const {
+		return ::from_bit(pos(bit, arg, args, bm, lsum), n & (1 << bit));
+	}
+	spbdd_handle from_sym(size_t arg, size_t args, int_t i) const;
+	spbdd_handle from_sym(size_t arg, size_t args, int_t i, 
+		const bitsmeta& bm) const;
 	spbdd_handle from_sym_eq(size_t p1, size_t p2, size_t args) const;
 
 	void add_bit();

@@ -39,7 +39,8 @@ static const std::set<std::wstring> str_bltins =
 struct elem {
 	enum etype {
 		NONE, SYM, NUM, CHR, VAR, OPENP, CLOSEP, ALT, STR, EQ, NEQ, LEQ, GT, LT,
-		GEQ, BLTIN, NOT, AND, OR, FORALL, EXISTS, UNIQUE, IMPLIES, COIMPLIES, ALU
+		GEQ, BLTIN, NOT, AND, OR, FORALL, EXISTS, UNIQUE, IMPLIES, COIMPLIES, 
+		ALU, ARGTYP
 	} type;
 	t_alu_op alu_op = NOP;
 	int_t num = 0;

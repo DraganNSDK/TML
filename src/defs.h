@@ -87,5 +87,16 @@ typedef enum  {
 	NOP, ADD, SUB, MULT, BITWOR, BITWAND, BITWXOR, SHR, SHL
 } t_alu_op;
 
+// D: TODO: a prototype of the type metadata, needed in dict etc.
+struct ttype {
+	enum basetype { NONE, INT, CHR, STR } bt = ttype::NONE;
+	size_t bits;
+	lexeme ety, ebi;
+	//ttype(basetype bt, size_t bits, const lexeme& ety, const lexeme& ebi)
+	//: bt(bt), bits(bits), ety(ety), ebi(ebi) {}
+	ttype(basetype bt, size_t bits, cws fst, cws efst, cws snd, cws esnd)
+	: bt(bt), bits(bits), ety{ fst, efst }, ebi{ snd, esnd } {}
+};
+
 #endif
 //#define TRANSFORM_BIN_DRIVER

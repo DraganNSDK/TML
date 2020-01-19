@@ -14,6 +14,8 @@
 #include "err.h"
 using namespace std;
 
+int_t get_int_t(cws from, cws to); // input.cpp, TODO: put in header
+
 dict_t::dict_t() : op(get_lexeme(L"(")), cl(get_lexeme(L")")) {}
 
 dict_t::~dict_t() { for (auto x : strs_extra) free((wstr)x[0]); }
@@ -70,6 +72,50 @@ int_t dict_t::get_bltin(const lexeme& l) {
 	if (it != bltins_dict.end()) return it->second;
 	bltins.push_back(l);
 	return bltins_dict[l] = bltins.size() - 1;
+}
+
+bool equals(cws l0, cws l1, cws s) {
+	size_t n = wcslen(s);
+	return (size_t)(l1 - l0) != n ? false : !wcsncmp(l0, s, n);
+}
+
+int_t dict_t::get_type(const lexeme& l) {
+	if (*l[0] != L':') parse_error(err_eof, l);
+	auto it = types_dict.find(l);
+	if (it != types_dict.end()) return it->second;
+
+	cws fst = l[0], efst = nullptr, snd = nullptr, esnd = nullptr;
+	while (*++fst && fst != l[1]) {
+		if (esnd != nullptr) { // chars after ], not allowed
+			parse_error(err_eof, l);
+			break;
+		}
+		if (*fst == L'[') efst = fst; // snd = fst + 1;
+		else if (*fst == L']') esnd = fst;
+	}
+	if (efst && !esnd) parse_error(err_eof, l); // has [ but no ]
+	fst = l[0] + 1;
+	//efst = efst ? efst : l[1]; // if (!efst || !esnd) snd = esnd = 0;
+	if (!efst) efst = l[1], snd = esnd = 0;
+	else if (!esnd) snd = esnd = 0;
+	else snd = efst + 1, esnd = esnd;
+
+	ttype::basetype type = ttype::NONE;
+	if (equals(fst, efst, L"int")) type = ttype::INT;
+	else if (equals(fst, efst, L"chr")) type = ttype::CHR;
+	else if (equals(fst, efst, L"str")) type = ttype::STR;
+	int_t bits = snd ? get_int_t(snd, esnd) : 0; // TODO: default bitness?
+
+	types.emplace_back(type, bits, fst, efst, snd, esnd);
+	return types_dict[l] = types.size() - 1;
+
+	//lexeme etype, ebits;
+	//if (efst == nullptr) etype = lexeme{ l[0] + 1, l[1] }, ebits = { 0,0 };
+	//else if (esnd == nullptr) etype = lexeme{ l[0] + 1, efst }, ebits = { 0,0 };
+	//else etype = lexeme{ l[0] + 1, efst }, ebits = lexeme{ efst+1, esnd };
+	//types.emplace_back(ttype::INT, 10, etype, ebits);
+	////types.emplace_back(ttype::INT, 10, l);
+	//return types_dict[l] = types.size() - 1;
 }
 
 lexeme dict_t::get_lexeme(const wstring& s) {

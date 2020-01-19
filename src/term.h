@@ -20,19 +20,25 @@ struct term : public ints {
 	size_t orderid = 0;
 	// D: TODO: builtins are very different, handle as a same size union struct?
 	int_t idbltin = -1; // size_t bltinsize;
+	// D: there's a dillema how to store types (where, how much, w/ any arg or 
+	// just for vars). Just w/ vars for the moment, but I'm not sure.
+	ints types;
 	term() {}
-	term(bool neg, textype extype, t_alu_op alu_op, ntable tab, const ints& args, size_t orderid)
-		: ints(args), neg(neg),extype(extype), alu_op(alu_op), tab(tab), orderid(orderid) {}
-	// builtins .ctor
-	term(bool neg, ntable tab, const ints& args, size_t orderid, int_t idbltin)
+	term(bool neg, textype extype, t_alu_op alu_op, ntable tab, 
+		const ints& args, const ints& types, size_t orderid)
+		: ints(args), neg(neg), extype(extype), alu_op(alu_op), tab(tab), 
+		orderid(orderid), types(types) {}
+	term(bool neg, ntable tab, const ints& args, const ints& types, 
+		size_t orderid, int_t idbltin)
 		: ints(args), neg(neg), extype(term::BLTIN), tab(tab), orderid(orderid),
-		idbltin(idbltin) {}
+		idbltin(idbltin), types(types) {}
 	bool operator<(const term& t) const {
 		if (neg != t.neg) return neg;
 		//if (extype != t.extype) return extype < t.extype;
 		//if (isalu != t.isalu) return isalu;
 		if (tab != t.tab) return tab < t.tab;
 		if (goal != t.goal) return goal;
+		// D: TODO: order types, bltin...
 		return (const ints&)*this < t;
 	}
 	void replace(const std::map<int_t, int_t>& m);
