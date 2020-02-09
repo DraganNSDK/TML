@@ -17,11 +17,13 @@ include(tml-common)
 set(TML_HEADERS
 	TML.h
 	bdd.h
+	bitsmeta.h
 	defs.h
 	dict.h
 	driver.h
 	err.h
 	input.h
+	iterbdds.h
 	options.h
 	output.h
 	repl.h
@@ -31,11 +33,13 @@ set(TML_HEADERS
 set(TML_SOURCES
 	proof.cpp
 	bdd.cpp
+	bitsmeta.cpp
 	bdd_ext.cpp
 	binary.cpp
 	dict.cpp
 	driver.cpp
 	input.cpp
+	iterbdds.cpp
 	options.cpp
 	output.cpp
 	print_prolog.cpp

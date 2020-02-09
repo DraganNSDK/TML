@@ -314,23 +314,26 @@ bool raw_term::parse(const lexemes& l, size_t& pos, const raw_prog& prog) {
 	// D: why is ':' a terminator for the term? we need it for the ?var:type[]
 	t_alu_op alu_op_aux = NOP;
 	//XXX: review for "-"
-	elem::etype prevtype = elem::NONE;
+	//elem::etype prevtype = elem::NONE;
+	nargs = 0;
+	bool isarg = false; // basically telling us whether previous elem was an arg
 	//while (!wcschr(L".:,;{}-", *l[pos][0])) { // L".:,;{}|&-<"
 	while (true) { // :
 		if (wcschr(L".:,;{}-", *l[pos][0])) {
-			bool isarg = prevtype == elem::SYM || prevtype == elem::NUM || 
-				prevtype == elem::CHR || prevtype == elem::VAR;
+			//bool isarg = prevtype == elem::SYM || prevtype == elem::NUM || 
+			//	prevtype == elem::CHR || prevtype == elem::STR || 
+			//	prevtype == elem::VAR;
 			if (!(isarg && L':' == *l[pos][0]))
 				break;
 			else {
-				wcout << L"arg type:" << L"" << endl;
+				//wcout << L"arg type:" << L"" << endl;
 			}
 		}
 		if (e.emplace_back(), !e.back().parse(l, pos)) return false;
 		else if (pos == l.size())
 			parse_error(input::source[1], err_eof, s[0]);
 		elem& el = e.back(); // TODO: , el = e.back(), !el.parse(l, pos)
-		prevtype = el.type;
+		isarg = false; //prevtype = el.type;
 		switch (el.type) {
 			case elem::EQ: eq = true; break;
 			case elem::NEQ: noteq = true; break;
@@ -338,15 +341,23 @@ bool raw_term::parse(const lexemes& l, size_t& pos, const raw_prog& prog) {
 			case elem::GT: gt = true; break;
 			case elem::LT: lt = true; break;
 			case elem::GEQ: geq = true; break;
+			case elem::ALU: alu = true; alu_op_aux = e.back().alu_op; break;
 			case elem::SYM:
 				if (prog.builtins.find(el.e) != prog.builtins.end()) {
 					el.type = elem::BLTIN;
 					bltin = true;
 				}
+				// fall through is tempting but as soon as we add code below...
+				isarg = true;
 				break;
-			case elem::ALU: alu = true; alu_op_aux = e.back().alu_op; break;
+			case elem::NUM:
+			case elem::CHR:
+			case elem::STR:
+			case elem::VAR:
+				isarg = true;
 			default: break;
 		}
+		if (isarg) ++nargs;
 		if (!rel) rel = true;
 	}
 	if (e.empty()) return false;
@@ -705,20 +716,28 @@ bool raw_prog::parse(const lexemes& l, size_t& pos) {
 	return true;
 }
 
-raw_progs::raw_progs(FILE* f) : raw_progs(file_read_text(f)) {}
+//raw_progs::raw_progs(FILE* f) : raw_progs(file_read_text(f)) {}
+//
+//raw_progs::raw_progs(const std::wstring& s) { parse(s); }
 
-raw_progs::raw_progs(const std::wstring& s) { parse(s); }
+raw_progs::raw_progs() { } // parse(s); 
 
-void raw_progs::parse(const std::wstring& s, bool newseq) {
+void raw_progs::parse(const std::wstring& s, dict_t& dict, bool newseq) {
 	try {
 		if (s == L"") return;
 		size_t pos = 0;
 		lexemes l = prog_lex(wcsdup(s.c_str()));
 		if (!l.size()) return;
+		auto prepare_builtins = [&dict, this](raw_prog& x) {
+			// BLTINS: prepare builtins (dict)
+			for (const wstring& s : str_bltins)
+				x.builtins.insert(dict.get_lexeme(s));
+		};
 		if (*l[pos][0] != L'{') {
 			raw_prog& x = !p.size() || newseq
 				? p.emplace_back() : p.back();
 			//raw_prog x;
+			prepare_builtins(x);
 			if (!x.parse(l, pos))
 				parse_error(l[pos][0],
 					err_rule_dir_prod_expected, l[pos]);
@@ -727,6 +746,7 @@ void raw_progs::parse(const std::wstring& s, bool newseq) {
 			// emplace to avoid copying dict etc. (or handle to avoid issues)
 			raw_prog& x = p.emplace_back(); // if needed on err: p.pop_back();
 			//raw_prog x;
+			prepare_builtins(x);
 			if (++pos, !x.parse(l, pos))
 				parse_error(l[pos][0], err_parse, l[pos]);
 			//if (p.push_back(x), pos==l.size() || *l[pos++][0]!=L'}')

@@ -20,8 +20,14 @@
 #include "err.h"
 using namespace std;
 
-#define mkchr(x) ((((int_t)x)<<2)|1)
-#define mknum(x) ((((int_t)x)<<2)|2)
+//#define mkchr(x) ((((int_t)x)<<2)|1)
+//#define mknum(x) ((((int_t)x)<<2)|2)
+//#define mksym(x) (int_t(x)<<2)
+//#define un_mknum(x) (int_t(x)>>2)
+#define mkchr(x) (int_t(x))
+#define mknum(x) (int_t(x))
+#define mksym(x) (int_t(x))
+#define un_mknum(x) (int_t(x))
 
 size_t sig_len(const sig& s) {
 	size_t r = 0;
@@ -37,85 +43,146 @@ void unquote(wstring& str) {
 wstring _unquote(wstring str) { unquote(str); return str; }
 
 #ifdef DEBUG
-vbools tables::allsat(spbdd_handle x, size_t args) const {
+vbools tables::allsat(spbdd_handle x, size_t args, const bitsmeta& bm) const {
 //	const size_t args = siglens[tab];
-	vbools v = ::allsat(x, bits * args), s;
-	for (bools b : v) {
-		s.emplace_back(bits * args);
-		for (size_t n = 0; n != bits; ++n)
-			for (size_t k = 0; k != args; ++k)
-				s.back()[(k+1)*bits-n-1] = b[pos(n, k, args)];
-	}
+	// D: this no longer works, args * bits and (k+1)*bits below, bits too etc.
+	// bits * args => bm.args_bits
+	throw 0;
+	vbools v = ::allsat(x, bm.args_bits), s;
+	//for (bools b : v) {
+	//	s.emplace_back(bm.args_bits);
+	//	// D: this is bits-1st => args-1st conversion? what for? 
+	//	// no longer works, but need to know the nature of this
+	//	for (size_t n = 0; n != bits; ++n)
+	//		for (size_t k = 0; k != args; ++k)
+	//			s.back()[(k+1)*bits-n-1] = b[bm.pos(n, k, args)];
+	//}
 	return s;
 }
 #endif
 
-spbdd_handle tables::leq_const(int_t c, size_t arg, size_t args, size_t bit)
-	const {
-	if (!--bit)
-		return	(c & 1) ? htrue :
-			::from_bit(pos(0, arg, args), false);
-	return (c & (1 << bit)) ?
-		bdd_ite_var(pos(bit, arg, args), leq_const(c, arg, args, bit),
+spbdd_handle tables::leq_const(
+	int_t c, size_t arg, size_t args, const bitsmeta& bm) const {
+	size_t bits = bm.types[arg].bitness;
+	//int_t nc = 0;
+	//for (int n = 0; n < bits; ++n) if (c & (1<<(bits-n-1))) nc |= 1<<n;
+	//c = nc;
+	return leq_const(c, arg, args, bits, bits, bm);
+	// D: should we cache this too, why not, I guess there could be many c-s?
+	//static ekcmemo x;
+	//static map<ekcmemo, spbdd_handle>::const_iterator it;
+	//size_t bits = bm.types[arg].bitness;
+	//if ((it = leqcmemo.find(x = { c, arg, args, bits })) != leqcmemo.end())
+	//	return it->second;
+	//spbdd_handle r = leq_const(c, arg, args, bits, bm);
+	//return leqcmemo.emplace(x, r), r;
+}
+
+/*
+represents LEQ as in ?x < c (var < const even though param order is rev.).
+(it's recursive but always invoke with leq_const(..., bits), or var-bits)
+- c - a const value
+- arg - arg #
+- args - total # of arguments (for table, alt, body - or odd 'detached' bdd)
+- bit - actually max # of bits (not the 'bit'), always start w/ (..., bits)
+- bm - bitsmeta info to pass in (either table.bm or alt.bm or body.table.bm)
+*/
+spbdd_handle tables::leq_const(int_t c, size_t arg, size_t args, size_t b,
+	size_t bits, const bitsmeta& bm) const {
+	// why: we need to physically compare from higher to lower bits
+	// b is as it is (for the sake of c), but we invert for pos to get right bit
+	if (!--b)
+		return (c & (1 << 0)) ? htrue : // (c & 1)
+		::from_bit(bm.pos(bm.bit(0, bits), arg, args), false);
+	return (c & (1 << b)) ? // (1 << b)
+		bdd_ite_var(bm.pos(bm.bit(b, bits), arg, args), 
+			leq_const(c, arg, args, b, bits, bm),
 			htrue) :
-		bdd_ite_var(pos(bit, arg, args), hfalse,
-			leq_const(c, arg, args, bit));
+		bdd_ite_var(bm.pos(bm.bit(b, bits), arg, args), hfalse,
+			leq_const(c, arg, args, b, bits, bm));
+
+	//if (!--b)
+	//	return (c & 1) ? htrue : // (c & 1)
+	//		::from_bit(bm.pos(0, arg, args), false);
+	//return (c & (1 << b)) ? // (1 << b)
+	//	bdd_ite_var(bm.pos(b, arg, args), leq_const(c, arg, args, b, bits, bm),
+	//		htrue) :
+	//	bdd_ite_var(bm.pos(b, arg, args), hfalse,
+	//		leq_const(c, arg, args, b, bits, bm));
 }
 
 typedef tuple<size_t, size_t, size_t, int_t> skmemo;
 typedef tuple<size_t, size_t, size_t, int_t> ekmemo;
+typedef tuple<int_t, size_t, size_t, int_t> ekcmemo;
 map<skmemo, spbdd_handle> smemo;
 map<ekmemo, spbdd_handle> ememo;
 map<ekmemo, spbdd_handle> leqmemo;
+map<ekcmemo, spbdd_handle> leqcmemo;
 
-spbdd_handle tables::leq_var(size_t arg1, size_t arg2, size_t args) const {
+spbdd_handle tables::leq_var(size_t arg1, size_t arg2, size_t args, 
+	const bitsmeta& bm) const {
 	static ekmemo x;
 	static map<ekmemo, spbdd_handle>::const_iterator it;
+	size_t bits = bm.types[arg1].bitness;
+	size_t bits2 = bm.types[arg2].bitness;
+	// D: TODO: is this logic ok? we match bit by bit, if # bits differ => false
+	// or should we actually throw an error here?
+	if (bits != bits2) return hfalse;
 	if ((it = leqmemo.find(x = { arg1, arg2, args, bits })) != leqmemo.end())
 		return it->second;
-	spbdd_handle r = leq_var(arg1, arg2, args, bits);
+	spbdd_handle r = leq_var(arg1, arg2, args, bits, bm);
 	return leqmemo.emplace(x, r), r;
 }
 
-spbdd_handle tables::leq_var(size_t arg1, size_t arg2, size_t args, size_t bit)
-	const {
+spbdd_handle tables::leq_var(size_t arg1, size_t arg2, size_t args, size_t bit, 
+	const bitsmeta& bm) const {
 	if (!--bit)
-		return	bdd_ite(::from_bit(pos(0, arg2, args), true),
+		return	bdd_ite(::from_bit(bm.pos(0, arg2, args), true),
 				htrue,
-				::from_bit(pos(0, arg1, args), false));
-	return	bdd_ite(::from_bit(pos(bit, arg2, args), true),
-			bdd_ite_var(pos(bit, arg1, args),
-				leq_var(arg1, arg2, args, bit), htrue),
-			bdd_ite_var(pos(bit, arg1, args), hfalse,
-				leq_var(arg1, arg2, args, bit)));
+				::from_bit(bm.pos(0, arg1, args), false));
+	return	bdd_ite(::from_bit(bm.pos(bit, arg2, args), true),
+			bdd_ite_var(bm.pos(bit, arg1, args),
+				leq_var(arg1, arg2, args, bit, bm), htrue),
+			bdd_ite_var(bm.pos(bit, arg1, args), hfalse,
+				leq_var(arg1, arg2, args, bit, bm)));
 }
 
-void tables::range(size_t arg, size_t args, bdd_handles& v) {
-	spbdd_handle	ischar= ::from_bit(pos(0, arg, args), true) &&
-			::from_bit(pos(1, arg, args), false);
-	spbdd_handle	isnum = ::from_bit(pos(0, arg, args), false) &&
-			::from_bit(pos(1, arg, args), true);
-	spbdd_handle	issym = ::from_bit(pos(0, arg, args), false) &&
-			::from_bit(pos(1, arg, args), false);
+void tables::range(size_t arg, size_t args, bdd_handles& v, const bitsmeta& bm)
+	const {
+	int_t nums = bm.nums[arg];
+	int_t chars = bm.get_chars(arg);
+	int_t syms = bm.get_syms(arg, dict.nsyms());
+
+	spbdd_handle	ischar= ::from_bit(bm.pos(0, arg, args), true) &&
+			::from_bit(bm.pos(1, arg, args), false);
+	spbdd_handle	isnum = ::from_bit(bm.pos(0, arg, args), false) &&
+			::from_bit(bm.pos(1, arg, args), true);
+	spbdd_handle	issym = ::from_bit(bm.pos(0, arg, args), false) &&
+			::from_bit(bm.pos(1, arg, args), false);
 	// nums is set to max NUM, not universe size. While for syms it's the size.
 	// It worked before because for arity==1 fact(nums) is always negated.
 	bdd_handles r = {ischar || isnum || issym,
 		(!chars	? htrue%ischar : bdd_impl(ischar,
-			leq_const(mkchr(chars-1), arg, args, bits))),
+			leq_const(mkchr(chars-1), arg, args, bm))), // , bits
 		(!nums 	? htrue%isnum : bdd_impl(isnum,
-			leq_const(mknum(nums), arg, args, bits))),
+			leq_const(mknum(nums), arg, args, bm))), // , bits
 		(!syms 	? htrue%issym : bdd_impl(issym,
-			leq_const(((syms-1)<<2), arg, args, bits)))};
+			leq_const((mksym(syms-1)), arg, args, bm)))}; // (syms-1)<<2 //,bits
 	v.insert(v.end(), r.begin(), r.end());
 }
 
-spbdd_handle tables::range(size_t arg, ntable tab) {
-	array<int_t, 6> k = { syms, nums, chars, (int_t)tbls[tab].len,
-		(int_t)arg, (int_t)bits };
+spbdd_handle tables::range(size_t arg, ntable tab, const bitsmeta& bm) {
+	size_t args = tbls[tab].len;
+	size_t bits = bm.types[arg].bitness;
+	int_t nums = bm.nums[arg];
+	int_t chars = bm.get_chars(arg);
+	int_t syms = bm.get_syms(arg, dict.nsyms());
+	array<int_t, 6> k = 
+		{ syms, nums, chars, (int_t)args, (int_t)arg, (int_t)bits };
 	auto it = range_memo.find(k);
 	if (it != range_memo.end()) return it->second;
 	bdd_handles v;
-	return	range(arg, tbls[tab].len, v),
+	return	range(arg, args, v, bm),
 		range_memo[k] = bdd_and_many(move(v));
 }
 
@@ -125,73 +192,124 @@ uints perm_init(size_t n) {
 	return p;
 }
 
-spbdd_handle tables::add_bit(spbdd_handle x, size_t args) {
-	uints perm = perm_init(args * bits);
+uints perm_init(const bitsmeta& bm) {
+	size_t n = bm.args_bits;
+	uints p(n);
+	while (n--) p[n] = n;
+	return p;
+}
+
+/* add bit to permute/ex (of a body) */
+pair<bools, uints> tables::permex_add_bit(
+	ints vals, const varmap& vm, c_bitsmeta& bm, c_bitsmeta& altbm) {
+	DBG(assert(bm.get_args() == vals.size()););
+	//size_t args = bm.get_args();
+	bools ex = bools(bm.args_bits, false);
+	varmap m;
+	for (size_t n = 0; n != vals.size(); ++n)
+		if (vals[n] >= 0 || has(m, vals[n]))
+			get_var_ex(n, vals.size(), ex, bm);
+		else
+			m.emplace(vals[n], n);
+	uints perm = get_perm(vals, vm, bm, altbm);
+	return { ex, perm };
+}
+
+/* make a permute and a new bitsmeta from the previous bm (support method) */
+perminfo tables::add_bit_perm(
+	bitsmeta& bm, size_t arg, size_t args) {
+	// - make new bm (just for this arg-s bits+1)
+	// - permute from old args/bm to new-args/new-bm, like del/add tail/get_perm
+	// and important (for optimization) is the actual bits layout (bits/args1st)
+	bitsmeta newbm(bm, arg, 1); // make new bm, increment arg's bits (bits+1)
+	uints perm = perm_init(bm.args_bits); // bm.perm_init(); 
+	// map from old to new pos, affects all args, for the 'arg' shift bits by 1, 
+	// free up 0 bit, for others it's the same bit<->bit (pos may still change)
+	// (bits+1) is handled internally by newbm.pos (it 'knows' each arg's bits)
+	// D: this is fix for 'doubled consts', seems we need to reverse the bits?
 	for (size_t n = 0; n != args; ++n)
-		for (size_t k = 0; k != bits; ++k)
-			perm[pos(k, n, args)] = pos(k+1, bits+1, n, args);
-	bdd_handles v = { x ^ perm };
-	for (size_t n = 0; n != args; ++n)
-		v.push_back(::from_bit(pos(0, bits + 1, n, args), false));
+		for (size_t b = 0; b != bm.types[n].bitness; ++b)
+			if (n==arg) perm[bm.pos(b, n, args)] = newbm.pos(b+1, n, args);
+			//if (n==arg) perm[bm.pos(b, n, args)] = newbm.pos(b, n, args);
+			else		perm[bm.pos(b, n, args)] = newbm.pos(b, n, args);
+	return { newbm, perm };
+}
+
+/* adds a bit to an existing bdd */
+spbdd_handle tables::add_bit(
+	spbdd_handle h, perminfo& perm, size_t arg, size_t args) {
+	if (h == nullptr) 
+		return h;
+	bdd_handles v = { h ^ perm.perm };
+	v.push_back(::from_bit(perm.bm.pos(0, arg, args), false));
 	return bdd_and_many(move(v));
 }
 
-void tables::add_bit() {
-	range_clear_memo();
-	spbdd_handle x = hfalse;
-	bdd_handles v;
-	for (auto& x : tbls)
-//	for (size_t n = 0; n != ts.size(); ++n)
-//		x.second.t = add_bit(x.second.t, x.second.len);
-		x.t = add_bit(x.t, x.len);
-	++bits;
+/* inits table's bitsmeta / bits info (after all facts are loaded) */
+spbdd_handle table::init_bits() { //table& tbl) {
+	spbdd_handle x = t;
+	size_t args = len;
+	bm.init(dict);
+	// D: no need to permute, we init all bits in one pass, we know arg bits. 
+	// (only in add_bit later, when enlarging universe, we'd need to permute)
+	// D: x is hfalse, then we have and_many, how is this working? ok w/o perm?
+	bdd_handles v = { x }; // ^ perm 
+	for (size_t arg = 0; arg != args; ++arg) {
+		size_t bits = bm.types[arg].bitness; // D: this is now 'bits' (per arg)
+		for (size_t b = 0; b != bits; ++b)
+			v.push_back(::from_bit(bm.pos(b, arg, args), false));
+	}
+	// D: these bdd changes only 'stick' for table for rules that aren't facts. 
+	// (.t bdd gets 'eaten' by the get_rules/get_facts for facts tables)
+	return t = bdd_and_many(move(v));
 }
 
-//typedef tuple<size_t, size_t, size_t, int_t> skmemo;
-//typedef tuple<size_t, size_t, size_t, int_t> ekmemo;
-//map<skmemo, spbdd_handle> smemo;
-//map<ekmemo, spbdd_handle> ememo;
-//map<ekmemo, spbdd_handle> leqmemo;
-
-spbdd_handle tables::from_sym(size_t arg, size_t args, int_t i) const {
-	static skmemo x;
-	static map<skmemo, spbdd_handle>::const_iterator it;
-	if ((it = smemo.find(x = { i, arg, args, bits })) != smemo.end())
-		return it->second;
-	spbdd_handle r = htrue;
-	for (size_t b = 0; b != bits; ++b) r = r && from_bit(b, arg, args, i);
-	return smemo.emplace(x, r), r;
+void tables::init_bits() {
+	range_clear_memo();
+	for (auto& x : tbls)
+		x.init_bits(); // x.t = x.init_bits();
+	//++bits;
 }
 
 /*
-1) arg, args most often relates to alt's vm/varslen
-2) or to table's facts (fact terms)
-3) or to body term (get_body)
+arg, args relate to 
+1) alt's vm/varslen or
+2) table term's ints/elems (or to facts terms)
+3) body (get_body) is always having table behind, so is the same as (2)
+Also, all bdd-s created must adhere to either of these 3 cases (as any bdd is 
+always defined by its total arguments/size, arg order, arg-types/bitness and 
+universe). The only exception seems to be the ALU/arithmetics handler which 
+is creating some temp bdds (and args), TODO: not sure how to handle those.
+We also can't 'mix' the bdd-s of different origin (unless we adjust/permute 1st)
 */
-spbdd_handle tables::from_sym(size_t arg, size_t args, int_t i,
-	const bitsmeta& bm) const {
+spbdd_handle tables::from_sym(
+	size_t arg, size_t args, int_t i, c_bitsmeta& bm) const {
 	static skmemo x;
 	static map<skmemo, spbdd_handle>::const_iterator it;
-	size_t bits = bm.vbits[arg]; // D: this is now variable 'bits' (per arg)
+	size_t bits = bm.types[arg].bitness; // this is now 'bits' (per arg)
 	if ((it = smemo.find(x = { i, arg, args, bits })) != smemo.end())
 		return it->second;
 	spbdd_handle r = htrue;
-	size_t lsum = bm.leftbits(arg, args); // precalculate, same for all bits
-	for (size_t b = 0; b != bits; ++b) 
-		r = r && from_bit(b, arg, args, i, bm, lsum);
+	for (size_t b = 0; b != bits; ++b)
+		r = r && bm.from_bit_re(b, bits, arg, args, i); // from_bit
 	return smemo.emplace(x, r), r;
 }
 
-spbdd_handle tables::from_sym_eq(size_t p1, size_t p2, size_t args) const {
+spbdd_handle tables::from_sym_eq(
+	size_t arg1, size_t arg2, size_t args, c_bitsmeta& bm) const {
 	static ekmemo x;
 	// a typo should be ekmemo, all the same at the moment
 	//static map<skmemo, spbdd_handle>::const_iterator it;
 	static map<ekmemo, spbdd_handle>::const_iterator it;
-	if ((it = ememo.find(x = { p1, p2, args, bits })) != ememo.end())
+	size_t bits = bm.types[arg1].bitness;
+	size_t bits2 = bm.types[arg2].bitness;
+	// D: TODO: is this logic ok? we match bit by bit, if bits differ it's false
+	if (bits != bits2) return hfalse;
+	if ((it = ememo.find(x = { arg1, arg2, args, bits })) != ememo.end())
 		return it->second;
 	spbdd_handle r = htrue;
 	for (size_t b = 0; b != bits; ++b)
-		r = r && ::from_eq(pos(b, p1, args), pos(b, p2, args));
+		r = r && ::from_eq(bm.pos(b, arg1, args), bm.pos(b, arg2, args));
 	return ememo.emplace(x, r), r;
 }
 
@@ -203,13 +321,13 @@ spbdd_handle tables::from_fact(const term& t) {
 	auto it = vs.end();
 	// D: we need table for any bdd ops (e.g. from_sym etc.)
 	DBG(assert(t.tab != -1););
-	table tbl = tbls[t.tab];
+	table& tbl = tbls[t.tab];
 	for (size_t n = 0, args = t.size(); n != args; ++n)
-		if (t[n] >= 0) r = r && from_sym(n, args, t[n], tbl.bm);
+		if (t[n] >= 0) r = r && from_sym(n, args, t[n], tbl); // .bm);
 		else if (vs.end() != (it = vs.find(t[n])))
-			r = r && from_sym_eq(n, it->second, args);
+			r = r && from_sym_eq(n, it->second, args, tbl); // .bm);
 		else if (vs.emplace(t[n], n), !t.neg)
-			r = r && range(n, t.tab);
+			r = r && range(n, t.tab, tbl.bm);
 	return r;
 }
 
@@ -219,38 +337,47 @@ sig tables::get_sig(const lexeme& rel, const ints& arity) {
 }
 
 term tables::from_raw_term(const raw_term& r, bool isheader, size_t orderid) {
-	ints t, types;
+	// D: use new raw_term.nargs to preinit nums, simplifies code/nums handling.
+	ints t;
 	lexeme l;
 	size_t nvars = 0;
-	// D: make sure enums match (should be the same), cast is just to warn.
 	term::textype extype = (term::textype)r.extype;
 	// D: header builtin is treated as rel, but differentiated later (decomp.)
 	bool realrel = extype == term::REL || (extype == term::BLTIN && isheader);
-	// skip the first symbol unless it's EQ/LEQ/ALU (which has VAR/CONST as 1st)
 	bool isrel = realrel || extype == term::BLTIN;
+	// D: use -1, numeric_limits<int>::min()
+	ints nums = ints((!isrel ? r.nargs : r.nargs-1), 0);
+	vector<arg_type> types;
+	// skip the first symbol unless it's EQ/LEQ/ALU (which has VAR/CONST as 1st)
 	for (size_t n = !isrel ? 0 : 1; n < r.e.size(); ++n)
 		switch (r.e[n].type) {
 			case elem::NUM: 
-				t.push_back(mknum(r.e[n].num)); 
-				types.push_back(-1); // D: num/const could have :int[10] ?
-				// D: TODO: find the right type based on all matching/tbl terms.
+				t.push_back(mknum(r.e[n].num));
+				nums[t.size()-1] = r.e[n].num;
+				// D: could num/const have :int[10] ?
+				// D: calc bitness only if needed (leave it for tbl in setargs)
+				if (n+1 < r.e.size() && r.e[n+1].type == elem::ARGTYP)
+					// use dict just to store strings, avoid parsing twice
+					types.push_back(dict.get_type_info(r.e[n+1].e));
+				else
+					types.emplace_back(
+						base_type::INT,
+						(!realrel ? bitsmeta::BitScanR(r.e[n].num) : 0));
 				break;
 			case elem::CHR: 
 				t.push_back(mkchr(r.e[n].ch)); 
-				types.push_back(-1);
-				// D: TODO: find the right type based on all matching/tbl terms.
+				if (n+1 < r.e.size() && r.e[n+1].type == elem::ARGTYP)
+					types.push_back(dict.get_type_info(r.e[n+1].e));
+				else
+					types.emplace_back(base_type::CHR, 8); // chars = 255;
 				break;
 			case elem::VAR:
-				// D: dillema is how/where to store types, just for vars? ints?
-				// we need all args types, even if inferred (or default). Types
-				// need to match across facts, terms (e.g. for same table). It's
-				// not simple, min is vars (we don't want empty vector of -1-s).
-				if (n+1 < r.e.size() && r.e[n+1].type == elem::ARGTYP)
-					types.push_back(dict.get_type(r.e[n+1].e));
-					//types[nvars] = dict.get_type(r.e[n+1].e); // if just vars
-				else
-					types.push_back(-1);
 				t.push_back(dict.get_var(r.e[n].e));
+				if (n+1 < r.e.size() && r.e[n+1].type == elem::ARGTYP)
+					// use dict just to store strings, avoid parsing twice
+					types.push_back(dict.get_type_info(r.e[n+1].e));
+				else
+					types.emplace_back(base_type::NONE, 0);
 				++nvars;
 				break;
 			case elem::STR:
@@ -258,18 +385,26 @@ term tables::from_raw_term(const raw_term& r, bool isheader, size_t orderid) {
 				++l[0], --l[1];
 				t.push_back(dict.get_sym(dict.get_lexeme(
 					_unquote(lexeme2str(l)))));
-				types.push_back(-1);
+				if (n+1 < r.e.size() && r.e[n+1].type == elem::ARGTYP)
+					types.push_back(dict.get_type_info(r.e[n+1].e));
+				else
+					types.emplace_back(base_type::STR, 0);
+				//syms = dict.nsyms();
 				break;
 			case elem::SYM: 
 				t.push_back(dict.get_sym(r.e[n].e));
-				types.push_back(-1);
+				if (n+1 < r.e.size() && r.e[n+1].type == elem::ARGTYP)
+					types.push_back(dict.get_type_info(r.e[n+1].e));
+				else
+					types.emplace_back(base_type::STR, 0);
+				//syms = dict.nsyms();
 			default: ;
 		}
-	// stronger 'realrel' condition for tables, only REL and header BLTIN
+
 	ntable tab = realrel ? get_table(get_sig(r)) : -1;
 	// D: this is to register term args/types for this table (to match/merge).
 	if (tab != -1)
-		tbls[tab].bm.setargs(t, types, dict);
+		tbls[tab].bm.set_args(t, types, nums);
 	
 	// D: idbltin name isn't handled above (only args, much like rel-s & tab-s).
 	if (extype == term::BLTIN) {
@@ -280,13 +415,11 @@ term tables::from_raw_term(const raw_term& r, bool isheader, size_t orderid) {
 			tbls[tab].bltinargs = t; // if needed, for rule/header (all in tbl)
 			tbls[tab].bltinsize = nvars; // number of vars (<0)
 		}
-		return term(r.neg, tab, t, types, orderid, idbltin);
+		return term(r.neg, tab, t, types, nums, orderid, idbltin);
 	}
-	return term(r.neg, extype, r.alu_op, tab, t, types, orderid);
+	return term(r.neg, extype, r.alu_op, tab, t, types, nums, orderid);
 	// ints t is elems (VAR, consts) mapped to unique ints/ids for perms.
 }
-
-
 
 form::ftype transformer::getdual( form::ftype type) {
 	switch (type) {
@@ -299,7 +432,6 @@ form::ftype transformer::getdual( form::ftype type) {
 		default: throw 0;
 	}
 }
-
 
 bool demorgan::push_negation( form *&root) {
 
@@ -337,7 +469,6 @@ bool demorgan::push_negation( form *&root) {
 
 }
 
-
 bool demorgan::apply( form *&root) {
 
 	if(root && root->type == form::ftype::NOT  &&
@@ -366,6 +497,7 @@ bool demorgan::apply( form *&root) {
 	}
 	return false;
 }
+
 bool substitution::apply(form *&phi){
 	if( phi && phi->type == form::ATOM) {
 		if(phi->tm == NULL) {
@@ -517,7 +649,6 @@ bool tables::from_raw_form(const raw_form_tree *rfm, form *&froot) {
 
 	if(!rfm) return froot=root,  true;
 
-
 	if(rfm->rt) {
 		ft = form::ATOM;
 		term t = from_raw_term(*rfm->rt);
@@ -525,8 +656,6 @@ bool tables::from_raw_form(const raw_form_tree *rfm, form *&froot) {
 		froot = root;
 		if(!root) return false;
 		return true;
-
-
 	}
 	else {
 		switch(rfm->type) {
@@ -594,7 +723,26 @@ void tables::out(const rt_printer& f) const {
 }
 
 void tables::out(wostream& os, spbdd_handle x, ntable tab) const {
-	out(x, tab, [&os](const raw_term& rt) { os << rt << L'.' << endl; });
+	//out(x, tab, [&os](const raw_term& rt) { os << rt << L'.' << endl; });
+
+	const table& tbl = tbls.at(tab);
+	const bitsmeta& bm = tbl.bm;
+	//set<term, cmptermrev> r;
+	set<term> r;
+	decompress(x && tbls.at(tab).t, tab, [&r, &bm](const term& t) {
+		term& tm = (term&)t;
+		tm.irevs = term::reverse(tm, bm.types); // , t.types);
+		//t.irevs = t.reverse();
+		r.insert(tm); 
+		});
+	for(const term& t: r) os << to_raw_term(t) << L'.' << endl;
+
+	//sort(r.begin(), r.end(), [this](const term& l, const term& r) {
+	//	if (l.neg != r.neg) return l.neg;
+	//	if (l.tab != r.tab) return l.tab < r.tab;
+	//	if (l.goal != r.goal) return l.goal;
+	//	return l.irevs < r.irevs;
+	//	});
 }
 
 #ifdef __EMSCRIPTEN__
@@ -631,18 +779,23 @@ void tables::out(emscripten::val o) const {
 
 void tables::decompress(spbdd_handle x, ntable tab, const cb_decompress& f,
 	size_t len, bool allowbltins) const {
-	table tbl = tbls.at(tab);
+	const table& tbl = tbls.at(tab);
 	// D: bltins are special type of REL-s, mostly as any but no decompress.
 	if (!allowbltins && tbl.idbltin > -1) return;
 	if (!len) len = tbl.len;
-	allsat_cb(x/*&&ts[tab].t*/, len * bits,
-		[tab, &f, len, this](const bools& p, int_t DBG(y)) {
+	const bitsmeta& bm = tbl.bm;
+	allsat_cb(x/*&&ts[tab].t*/, bm.args_bits, //len * bits,
+		[tab, &f, len, &bm, this](const bools& p, int_t DBG(y)) {
 		DBG(assert(abs(y) == 1);)
-		term r(false, term::REL, NOP, tab, ints(len, 0), ints(len, -1), 0);
-		for (size_t n = 0; n != len; ++n)
-			for (size_t k = 0; k != bits; ++k)
-				if (p[pos(k, n, len)])
-					r[n] |= 1 << k;
+		DBG(assert(bm.types.size() == len););
+		term r(false, term::REL, NOP, tab, ints(len, 0), bm.types, 
+			ints(len, 0), 0);
+		for (size_t arg = 0; arg != len; ++arg) {
+			size_t bits = bm.get_bits(arg);
+			for (size_t b = 0; b != bits; ++b)
+				if (p[bm.pos(b, arg, len)])
+					r[arg] |= 1 << bm.bit(b, bits); //(bits - b -1); //  1 << b;
+		}
 		f(r);
 	})();
 }
@@ -654,18 +807,34 @@ set<term> tables::decompress() {
 	return r;
 }
 
-#define get_var_lexeme(v) dict.get_lexeme(wstring(L"?v") + to_wstring(-v))
+// D: TODO: just a quick & dirty fix, get_elem, to_raw_term (out etc.) is const
+#define rdict() ((dict_t&)dict)
+//#define get_var_lexeme(v) dict.get_lexeme(wstring(L"?v") + to_wstring(-v))
+#define get_var_lexeme(v) rdict().get_lexeme(wstring(L"?v") + to_wstring(-v))
 
-elem tables::get_elem(int_t arg) const {
+elem tables::get_elem(int_t arg, const arg_type& type) const {
+	DBG(assert(type.type != base_type::NONE););
 	if (arg < 0) return elem(elem::VAR, get_var_lexeme(arg));
-	if (arg & 1) {
-		const wchar_t ch = arg >> 2;
-		if (iswprint(ch)) return elem(ch);
-		return	elem(elem::SYM, dict.get_lexeme(wstring(L"\"#") +
-			to_wstring((unsigned char)(ch)) + L"\""));
+	switch (type.type) {
+		case base_type::CHR: 
+			{
+			const wchar_t ch = un_mknum(arg); // arg >> 2; // un_mknum(arg);
+			if (iswprint(ch)) return elem(ch);
+			return	elem(elem::SYM, rdict().get_lexeme(wstring(L"\"#") +
+				to_wstring((unsigned char)(ch)) + L"\""));
+			}
+			break;
+		case base_type::INT:
+			return elem((int_t)un_mknum(arg)); // un_mknum(arg);//(arg>>2)
+			break;
+		case base_type::STR:
+			//un_mknum(arg)
+			return elem(elem::SYM, rdict().get_sym(arg));
+			break;
+		case base_type::NONE:
+			return elem(elem::SYM, rdict().get_lexeme(L"???"));
+		default: throw 0;
 	}
-	if (arg & 2) return elem((int_t)(arg>>2));
-	return elem(elem::SYM, dict.get_sym(arg));
 }
 
 raw_term tables::to_raw_term(const term& r) const {
@@ -673,14 +842,14 @@ raw_term tables::to_raw_term(const term& r) const {
 	rt.neg = r.neg;
 	size_t args;
 	if (r.extype == term::EQ) //r.iseq)
-		args = 2, rt.e.resize(args + 1), rt.e[0] = get_elem(r[0]),
-		rt.e[1] = elem(elem::SYM,dict.get_lexeme(r.neg ? L"!=" : L"=")),
-		rt.e[2] = get_elem(r[1]), rt.arity = {2};
+		args = 2, rt.e.resize(args + 1), rt.e[0] = get_elem(r[0], r.types[0]),
+		rt.e[1] = elem(elem::SYM, rdict().get_lexeme(r.neg ? L"!=" : L"=")),
+		rt.e[2] = get_elem(r[1], r.types[1]), rt.arity = {2};
 	else if (r.extype == term::LEQ) //r.isleq)
-		args = 2, rt.e.resize(args + 1), rt.e[0] = get_elem(r[0]),
+		args = 2, rt.e.resize(args + 1), rt.e[0] = get_elem(r[0], r.types[0]),
 		// D: TODO: is this a bug (never used)? for neg it should be > not <= ?
-		rt.e[1] = elem(elem::SYM,dict.get_lexeme(r.neg ? L"<=" : L">")),
-		rt.e[2] = get_elem(r[1]), rt.arity = {2};
+		rt.e[1] = elem(elem::SYM, rdict().get_lexeme(r.neg ? L"<=" : L">")),
+		rt.e[2] = get_elem(r[1], r.types[1]), rt.arity = {2};
 	// TODO: BLTINS: add term::BLTIN handling
 	else {
 		args = tbls.at(r.tab).len, rt.e.resize(args + 1);
@@ -688,7 +857,7 @@ raw_term tables::to_raw_term(const term& r) const {
 			dict.get_rel(get<0>(tbls.at(r.tab).s)));
 		rt.arity = get<ints>(tbls.at(r.tab).s);
 		for (size_t n = 1; n != args + 1; ++n)
-			rt.e[n] = get_elem(r[n - 1]);
+			rt.e[n] = get_elem(r[n-1], r.types[n-1]);
 		rt.insert_parens(dict.op, dict.cl);
 	}
 	DBG(assert(args == r.size());)
@@ -717,30 +886,96 @@ void align_vars(vector<term>& v) {
 	if (!m.empty()) for (term& t : v) t.replace(m);
 }
 
-uints tables::get_perm(const term& t, const varmap& m, size_t len) const {
-	uints perm = perm_init(t.size() * bits);
-	for (size_t n = 0, b; n != t.size(); ++n)
+uints tables::get_perm(const ints& vals, const varmap& m, const bitsmeta& tblbm,
+	const bitsmeta& altbm) { // const 
+	uints perm = perm_init(tblbm.args_bits);
+	size_t args = tblbm.get_args();
+	size_t len = altbm.get_args();
+	for (size_t n = 0, b; n != args; ++n)
+		if (vals[n] < 0)
+			for (b = 0; b != tblbm.get_bits(n); ++b)
+				perm[tblbm.pos(b, n, args)] = altbm.pos(b, m.at(vals[n]), len);
+	return perm;
+}
+uints tables::get_perm(const term& t, const varmap& m, size_t len,
+	const bitsmeta& tblbm, const bitsmeta& altbm) const {
+	uints perm = perm_init(tblbm.args_bits); // t.size()* bits);
+	DBG(assert(tblbm.get_args() == t.size()););
+	DBG(assert(altbm.get_args() == len););
+	size_t args = t.size(); // tblbm.get_args()
+	for (size_t n = 0, b; n != args; ++n)
 		if (t[n] < 0)
-			for (b = 0; b != bits; ++b)
-				perm[pos(b,n,t.size())] = pos(b,m.at(t[n]),len);
+			for (b = 0; b != tblbm.get_bits(n); ++b)
+				perm[tblbm.pos(b, n, args)] = altbm.pos(b, m.at(t[n]), len);
 	return perm;
 }
 
-template<typename T>
-varmap tables::get_varmap(const term& h, const T& b, size_t &varslen) {
-	varmap m;
-	varslen = h.size();
-	for (size_t n = 0; n != h.size(); ++n)
-		if (h[n] < 0 && !has(m, h[n])) m.emplace(h[n], n);
-	for (const term& t : b)
-		for (size_t n = 0; n != t.size(); ++n)
-			if (t[n] < 0 && !has(m, t[n]))
-				m.emplace(t[n], varslen++);
-	return m;
+map<size_t, int_t> varmap_inv(const varmap& vm) {
+	map<size_t, int_t> inv;
+	for (auto x : vm) {
+		assert(!has(inv, x.second));
+		inv.emplace(x.second, x.first);
+	}
+	return inv;
 }
 
+// D: this an alt method really, we need to change vm, varslen, inv, and now bm.
+// TODO: any real need for this to be a template?
+void tables::init_varmap(alt& a, const term& h, const term_set& al) {
+	varmap m;
+	// D: copy all header types + add below the body vars' types.
+	ints ats = (ints)h, nums = h.nums;
+	argtypes types = h.types;
+	a.varslen = h.size();
+	// D: why we're 'counting' all header args (varslen==h.size), not just vars?
+	for (size_t n = 0; n != h.size(); ++n)
+		if (h[n] < 0 && !has(m, h[n])) m.emplace(h[n], n);
+	for (const term& t : al)
+		for (size_t n = 0; n != t.size(); ++n)
+			if (t[n] < 0) { // && !has(m, t[n])) {
+				size_t arg;
+				if (!has(m, t[n])) {
+					m.emplace(t[n], a.varslen++);
+					ats.push_back(t[n]);
+					types.push_back(t.types[n]);
+					nums.push_back(t.nums[n]);
+					arg = a.varslen-1;
+				} else {
+					arg = m[t[n]];
+					// D: improve on the type if it's NONE and the term has it.
+					// this is a bit speculative, if vars match, do types match?
+					if (types[arg].type == base_type::NONE) {
+						if (t.types[n].type != base_type::NONE)
+							types[arg] = t.types[n];
+						else if (t.tab != -1 && 
+							tbls[t.tab].bm.types[n].type != base_type::NONE)
+							types[arg] = tbls[t.tab].bm.types[n];
+					}
+				}
+				if (t.tab == -1) continue; // skip eq and stuff, for now
+				// store all mutual dependencies (rules, tables/bodies)
+				vector<pair<ntable, size_t>>& v = a.argsdep[arg]; //get or new
+				v.emplace_back(t.tab, n);
+				vector<size_t>& vinv = a.invargsdep[{t.tab, n}]; //get or new
+				vinv.push_back(arg);
+				a.depends.insert(t.tab);
+			}
+	DBG(assert(a.varslen == ats.size() && a.varslen == types.size()););
+	a.vm = m;
+	a.inv = varmap_inv(a.vm);
+	a.bm = bitsmeta(types.size());
+	a.bm.set_args(ats, types, nums);
+	// as alt-s are on-the-fly, we have too init right away, tbls differ
+	a.bm.init(dict);
+	// D: Q: for tbl we also 0 each bit into .t bdd, don't alts have this?
+}
+
+spbdd_handle tables::get_alt_range(const term& h, const term_set& a, 
+	const varmap& vm, size_t len, const alt& at) {
+	return get_alt_range(h, a, vm, len, at.bm);
+}
 spbdd_handle tables::get_alt_range(const term& h, const term_set& a,
-	const varmap& vm, size_t len) {
+	const varmap& vm, size_t len, const bitsmeta& bm) {
 	set<int_t> pvars, nvars, eqvars, leqvars, aluvars;
 	std::vector<const term*> eqterms, leqterms, aluterms;
 	// first pass, just enlist eq terms (that have at least one var)
@@ -826,43 +1061,42 @@ spbdd_handle tables::get_alt_range(const term& h, const term_set& a,
 	if (h.neg) for (int_t i : h) if (i < 0)
 		nvars.erase(i), eqvars.erase(i), leqvars.erase(i); // aluvars.erase(i);
 	bdd_handles v;
-	for (int_t i : nvars) range(vm.at(i), len, v);
-	for (int_t i : eqvars) range(vm.at(i), len, v);
-	for (int_t i : leqvars) range(vm.at(i), len, v);
-	for (int_t i : aluvars) range(vm.at(i), len, v);
+	for (int_t i : nvars) range(vm.at(i), len, v, bm);
+	for (int_t i : eqvars) range(vm.at(i), len, v, bm);
+	for (int_t i : leqvars) range(vm.at(i), len, v, bm);
+	for (int_t i : aluvars) range(vm.at(i), len, v, bm);
 	if (!h.neg) {
 		set<int_t> hvars;
 		for (int_t i : h) if (i < 0) hvars.insert(i);
 		for (const term& t : a) for (int_t i : t) hvars.erase(i);
-		for (int_t i : hvars) range(vm.at(i), len, v);
+		for (int_t i : hvars) range(vm.at(i), len, v, bm);
 	}
 	return bdd_and_many(v);
 }
 
-map<size_t, int_t> varmap_inv(const varmap& vm) {
-	map<size_t, int_t> inv;
-	for (auto x : vm) {
-		assert(!has(inv, x.second));
-		inv.emplace(x.second, x.first);
-	}
-	return inv;
+body tables::get_body(
+	const term& t, const varmap& vm, size_t len, const alt& a) const {
+	return get_body(t, vm, len, a.bm);
 }
-
-body tables::get_body(const term& t, const varmap& vm, size_t len) const {
+body tables::get_body(
+	const term& t, const varmap& vm, size_t len, const bitsmeta& altbm) const {
 	body b;
-	b.neg = t.neg, b.tab = t.tab, b.perm = get_perm(t, vm, len),
-	b.q = htrue, b.ex = bools(t.size() * bits, false);
+	DBG(assert(t.tab != -1););
+	const table& tbl = tbls[t.tab];
+	b.neg = t.neg, b.tab = t.tab,
+	b.q = htrue, 
+	b.ex = bools(tbl.bm.args_bits, false), // bools(t.size() * bits, false)
+	b.perm = get_perm(t, vm, len, tbl.bm, altbm);
+	b.vals = (ints)t; // for later on re get_perm on add_bit (no other way?)
 	varmap m;
 	auto it = m.end();
-	DBG(assert(t.tab != -1););
-	table tbl = tbls[t.tab];
 	for (size_t n = 0; n != t.size(); ++n)
 		if (t[n] >= 0)
-			b.q = b.q && from_sym(n, t.size(), t[n], tbl.bm),
-			get_var_ex(n, t.size(), b.ex);
+			b.q = b.q && from_sym(n, t.size(), t[n], tbl), //.bm),
+			get_var_ex(n, t.size(), b.ex, tbl); // .bm);
 		else if (m.end() == (it = m.find(t[n]))) m.emplace(t[n], n);
-		else	b.q = b.q && from_sym_eq(n, it->second, t.size()),
-			get_var_ex(n, t.size(), b.ex);
+		else	b.q = b.q && from_sym_eq(n, it->second, t.size(), tbl), //.bm),
+			get_var_ex(n, t.size(), b.ex, tbl); // .bm);
 	return b;
 }
 
@@ -885,11 +1119,8 @@ void tables::get_facts(const flat_prog& m) {
 		measure_time_end();
 }
 
-void tables::get_nums(const raw_term& t) {
-	for (const elem& e : t.e)
-		if (e.type == elem::NUM) nums = max(nums, e.num);
-		else if (e.type == elem::CHR) chars = 255;
-}
+// D: this is no longer valid, there're no 'global' nums, chars, syms, bits
+void tables::get_nums(const raw_term& t) {}
 
 bool tables::to_pnf( form *&froot) {
 
@@ -909,6 +1140,7 @@ bool tables::to_pnf( form *&froot) {
 	return changed;
 
 }
+// D: this iterates & creates all terms (and into flat_prog) and inits tables.
 flat_prog tables::to_terms(const raw_prog& p) {
 	flat_prog m;
 	vector<term> v;
@@ -929,20 +1161,14 @@ flat_prog tables::to_terms(const raw_prog& p) {
 			}
 		else if(r.prft != NULL) {
 			form* froot = NULL;
-
 			from_raw_form(r.prft.get(), froot);
-
 			wprintf(L"\n ........... \n");
 			r.prft.get()->printTree();
 			wprintf(L"\n ........... \n");
 			froot->printnode();
-
 			to_pnf(froot);
-
 			if(froot) delete froot;
-
 		}
-
 		else for (const raw_term& x : r.h)
 			t = from_raw_term(x, true), t.goal = r.type == raw_rule::GOAL,
 			m.insert({t}), get_nums(x);
@@ -953,7 +1179,14 @@ flat_prog tables::to_terms(const raw_prog& p) {
 int_t freeze(vector<term>& v, int_t m = 0) {
 	map<int_t, int_t> p;
 	map<int_t, int_t>::const_iterator it;
-	for (const term& t : v) for (int_t i : t) if (i & 2) m = max(m, i >> 2);
+	// un_mknum(arg);
+	for (const term& t : v) 
+		for (size_t n = 0; n != t.size(); ++n) // for (int_t i : t)
+			if (t.types[n].type == base_type::INT) // if (i & 2) 
+				m = max(m, un_mknum(t[n])); //i >> 2
+		//for (int_t i : t) 
+		//	if (i & 2) 
+		//		m = max(m, un_mknum(i)); //i >> 2
 	for (term& t : v)
 		for (int_t& i : t)
 			if (i >= 0) continue;
@@ -992,8 +1225,11 @@ flat_prog& get_canonical_db(vector<vector<term>>& x, flat_prog& p) {
 	int_t m = 0;
 	for (vector<term>& v : x)
 		for (const term& t : v)
-			for (int_t i : t)
-				if (i & 2) m = max(m, i >> 2);
+			for (size_t n = 0; n != t.size(); ++n)
+				if (t.types[n].type == base_type::INT)
+					m = max(m, un_mknum(t[n])); //i >> 2
+			//for (int_t i : t)
+			//	if (i & 2) m = max(m, i >> 2);
 	for (vector<term>& t : x) {
 		freeze(t, m);
 		for (size_t n = 1; n != t.size(); ++n) p.insert({t[n]});
@@ -1002,8 +1238,10 @@ flat_prog& get_canonical_db(vector<vector<term>>& x, flat_prog& p) {
 }
 
 void tables::run_internal_prog(flat_prog p, set<term>& r, size_t nsteps) {
-	tables t(false, false, true);
-	t.dict = dict, t.bcqc = false, t.chars = chars, t.nums = nums;
+	dict_t tmpdict(dict); // copy ctor, only here, if this's needed at all?
+	tables t(move(tmpdict), false, false, true);
+	//t.dict = dict;
+	t.bcqc = false; // , t.chars = chars, t.nums = nums;
 	if (!t.run_nums(move(p), r, nsteps)) throw 0;
 }
 
@@ -1157,12 +1395,22 @@ void tables::get_alt(const term_set& al, const term& h, set<alt>& as) {
 	set<pair<body, term>> b;
 	spbdd_handle leq = htrue, q;
 	pair<body, term> lastbody;
-	a.vm = get_varmap(h, al, a.varslen), a.inv = varmap_inv(a.vm);
+	// D: this makes alt's bitmeta bits (for alt specific args/bdds).
+	//a.vm = get_varmap(h, al, a.varslen), a.inv = varmap_inv(a.vm);
+	init_varmap(a, h, al); // we get varmaps, varslen, inv and bm set
 
-	// D: TODO: make alt's bitmeta vbits, vargs (for alt specific args/bdds).
+	// some relations w/o facts only get types from alt-s, so update back tbl
+	// D: may not be worth it, we still do need to set all rules' types manually
+	tbls[h.tab].bm.update_types(a.bm.types, a.bm.nums);
+
+	// TODO: this is now done within iterbdds, needs tb propagated (type match)
+	// - make a map[tbl,arg] and put in it all 'related' args elsewhere
+	// - i.e. we need to somehow store both tbls and alts (bm-s are not enough)
+	// - goal is to be able to find them all if any arg somewhere changes
+
 	for (const term& t : al) {
 		if (t.extype == term::REL) {
-			b.insert(lastbody = { get_body(t, a.vm, a.varslen), t });
+			b.insert(lastbody = { get_body(t, a.vm, a.varslen, a), t });//.bm
 		} else if (t.extype == term::BLTIN) {
 			//DBG(assert(t.size() >= 2);); // ?v, + could have many vars
 			// TODO: check that last body exists, but should always be present.
@@ -1191,12 +1439,11 @@ void tables::get_alt(const term_set& al, const term& h, set<alt>& as) {
 				continue;
 			}
 			if (t[0] < 0 && t[1] < 0)
-				q = from_sym_eq(a.vm.at(t[0]), a.vm.at(t[1]),
-					a.varslen);
+				q = from_sym_eq(a.vm.at(t[0]), a.vm.at(t[1]), a.varslen, a);
 			else if (t[0] < 0)
-				q = from_sym(a.vm.at(t[0]), a.varslen, t[1]);
+				q = from_sym(a.vm.at(t[0]), a.varslen, t[1], a); // .bm);
 			else if (t[1] < 0)
-				q = from_sym(a.vm.at(t[1]), a.varslen, t[0]);
+				q = from_sym(a.vm.at(t[1]), a.varslen, t[0], a); // .bm);
 			a.eq = t.neg ? a.eq % q : (a.eq && q);
 		} else if (t.extype == term::LEQ) { // .isleq
 			DBG(assert(t.size() == 2););
@@ -1209,18 +1456,22 @@ void tables::get_alt(const term_set& al, const term& h, set<alt>& as) {
 				continue;
 			}
 			if (t[0] < 0 && t[1] < 0) {
-				q = leq_var(a.vm.at(t[0]), a.vm.at(t[1]),
-					a.varslen, bits);
-
+				// D: remove bits, use 'cached' version (any downsides for leq?)
+				q = leq_var(a.vm.at(t[0]), a.vm.at(t[1]), a.varslen, a); //.bm);
 			}
 			else if (t[0] < 0)
-				q = leq_const(t[1], a.vm.at(t[0]), a.varslen, bits);
+				// D: remove bits, use arg's var-bits
+				q = leq_const(t[1], a.vm.at(t[0]), a.varslen, a); // .bm);
 			/*
 			//XXX:replacement of leq_const by leq_var, needs further test and cleanup
 			else if (t[0] < 0) {
 				size_t args = t.size();
-				spbdd_handle aux = from_sym(1, args, t[1]);
-				q = leq_var(a.vm.at(t[0]), a.vm.at(t[0])+1, a.varslen+1, bits, aux);
+				// D: this will now fail (variable pos), args should be varslen?
+				spbdd_handle aux = from_sym(1, args, t[1], a.bm);
+				// D: this's changed, you need to pass a.bm (or specific bm),
+				// problem is you seem to shift vars by one here, i.e. you need
+				// to make your own bitsmeta struct based on a.bm and args/ops.
+				q = leq_var(a.vm.at(t[0]), a.vm.at(t[0])+1, a.varslen+1, bits, aux, a.bm);
 
 				bools exvec;
 				for (size_t i = 0; i < bits; ++i) {
@@ -1239,15 +1490,16 @@ void tables::get_alt(const term_set& al, const term& h, set<alt>& as) {
 			*/
 			else if (t[1] < 0)
 				// 1 <= v1, v1 >= 1, ~(v1 <= 1) || v1==1.
+				// D: remove bits, use arg's var-bits
 				q = htrue % leq_const(t[0],
-					a.vm.at(t[1]), a.varslen, bits) ||
-					from_sym(a.vm.at(t[1]), a.varslen,t[0]);
+					a.vm.at(t[1]), a.varslen, a.bm) ||
+					from_sym(a.vm.at(t[1]), a.varslen, t[0], a); //.bm);
 			leq = t.neg ? leq % q : (leq && q);
 		}
 		// we use LT/GEQ <==> LEQ + reversed args + !neg
 	}
 
-	a.rng = bdd_and_many({ get_alt_range(h, al, a.vm, a.varslen), leq });
+	a.rng = bdd_and_many({ get_alt_range(h, al, a.vm, a.varslen, a), leq });
 	static set<body*, ptrcmp<body>>::const_iterator bit;
 	body* y;
 	for (auto x : b) {
@@ -1256,7 +1508,10 @@ void tables::get_alt(const term_set& al, const term& h, set<alt>& as) {
 			a.push_back(*bit);
 		else *(y=new body) = x.first, a.push_back(y), bodies.insert(y);
 	}
-	auto d = deltail(a.varslen, h.size());
+	// D: we permute (prune) from alt to header/tbl (i.e. alt bm => tbl bm)
+	// (if needed we could make custom bm w/ its types... but this seems clear)
+	const table& tbl = tbls[h.tab];
+	auto d = deltail(a.varslen, h.size(), a.bm, tbl.bm);
 	a.ex = d.first, a.perm = d.second, as.insert(a);
 }
 
@@ -1445,20 +1700,26 @@ void tables::get_rules(flat_prog p) {
 		tbls[t.tab].ext = false;
 		varmap v;
 		r.neg = t.neg, r.tab = t.tab, r.eq = htrue, r.t = t;
-		// D: bltin and a header (moved to table instead, it's what we need)
-		//if (t.extype == term::BLTIN) {}
+		// D: r.eq is rule bdd, i.e. header/term bdd, i.e. table bdd (and bm).
+		// TODO: we might want to keep tbl/alt/bm attached to bdd-s? (to DBG)
+		DBG(assert(t.tab != -1););
+		table& tbl = tbls[t.tab];
 		for (size_t n = 0; n != t.size(); ++n)
-			if (t[n] >= 0) get_sym(t[n], n, t.size(), r.eq);
+			if (t[n] >= 0) get_sym(t[n], n, t.size(), r.eq, tbl); // .bm);
 			else if (v.end()==(it=v.find(t[n]))) v.emplace(t[n], n);
-			else r.eq = r.eq&&from_sym_eq(n, it->second, t.size());
+			else r.eq = r.eq && from_sym_eq(n, it->second, t.size(), tbl);
 		set<alt> as;
 		r.len = t.size();
 		for (const term_set& al : x.second) get_alt(al, t, as);
-		for (alt x : as)
+		set<ntable>& dpnds = depends[r.tab];
+		for (alt x : as) {
 			if ((ait = alts.find(&x)) != alts.end())
 				r.push_back(*ait);
 			else	*(aa = new alt) = x,
 				r.push_back(aa), alts.insert(aa);
+			dpnds.insert(x.depends.begin(), x.depends.end());
+			//dpnds.insert(r.tab); // self?
+		}
 		rs.insert(r);
 	}
 	for (rule r : rs)
@@ -1512,12 +1773,18 @@ void tables::load_string(lexeme r, const wstring& s) {
 	return true;
 }*/
 
-void tables::get_var_ex(size_t arg, size_t args, bools& b) const {
-	for (size_t k = 0; k != bits; ++k) b[pos(k, arg, args)] = true;
+void tables::get_var_ex(
+	size_t arg, size_t args, bools& vbs, c_bitsmeta& bm) { // const 
+	size_t bits = bm.types[arg].bitness;
+	for (size_t b = 0; b != bits; ++b) vbs[bm.pos(b, arg, args)] = true;
 }
 
-void tables::get_sym(int_t sym, size_t arg, size_t args, spbdd_handle& r) const{
-	for (size_t k = 0; k != bits; ++k) r = r && from_bit(k, arg, args, sym);
+// D: only called from get_rules, arg/args is rule header term's (i.e. =>table).
+void tables::get_sym(int_t sym, size_t arg, size_t args, spbdd_handle& r,
+	c_bitsmeta& bm) const{
+	size_t bits = bm.types[arg].bitness; // D: this is now 'bits' (per arg)
+	for (size_t b = 0; b != bits; ++b)
+		r = r && bm.from_bit_re(b, bits, arg, args, sym); // from_bit
 }
 
 ntable tables::get_table(const sig& s) {
@@ -1526,13 +1793,11 @@ ntable tables::get_table(const sig& s) {
 	ntable nt = tbls.size();
 	size_t len = sig_len(s);
 	max_args = max(max_args, len);
-	table tb;
-	// D: TODO: better init vectors here (we have size or even input types)
-	//tb.types = ints(len, -1);
-	//tb.vbits = vector<size_t>(len, 0);
-	//tb.vargs = vector<size_t>(len, 0);
-	return	tb.t = hfalse, tb.s = s, tb.len = len,
-		tbls.push_back(tb), smap.emplace(s,nt), nt;
+	// a proper ctor for table to init bm
+	table tb(s, len, dict);
+	return tbls.push_back(tb), smap.emplace(s, nt), nt;
+	//return	tb.t = hfalse, tb.s = s, tb.len = len,
+	//	tbls.push_back(tb), smap.emplace(s,nt), nt;
 }
 
 term to_nums(term t) {
@@ -1635,14 +1900,17 @@ void tables::transform_grammar(vector<production> g, flat_prog& p) {
 
 void tables::add_prog(const raw_prog& p, const strs_t& strs_) {
 	strs = strs_;
+	// D: this might be an issue now, these 'args' are global, 
+	// we don't have that now, arg should be only 'counted' if in term/tbl/alt
 	if (!strs.empty())
-		chars = 255,
+		//chars = 255,
 		dict.get_sym(dict.get_lexeme(L"space")),
 		dict.get_sym(dict.get_lexeme(L"alpha")),
 		dict.get_sym(dict.get_lexeme(L"alnum")),
 		dict.get_sym(dict.get_lexeme(L"digit")),
 		dict.get_sym(dict.get_lexeme(L"printable"));
-	for (auto x : strs) nums = max(nums, (int_t)x.second.size()+1);
+	// D: turned chars, nums off as we don't have them like this any more
+	//for (auto x : strs) nums = max(nums, (int_t)x.second.size()+1);
 	add_prog(to_terms(p), p.g);
 }
 
@@ -1688,8 +1956,9 @@ void tables::add_prog(flat_prog m, const vector<production>& g, bool mknums) {
 	smemo.clear(), ememo.clear(), leqmemo.clear();
 	if (mknums) to_nums(m);
 	rules.clear(), datalog = true;
-	syms = dict.nsyms();
-	while (max(max(nums, chars), syms) >= (1 << (bits - 2))) add_bit();
+	//syms = dict.nsyms();
+	//while (max(max(nums, chars), syms) >= (1 << (bits - 2))) add_bit();
+	init_bits();
 	for (auto x : strs) load_string(x.first, x.second);
 	transform_grammar(g, m);
 	get_rules(move(m));
@@ -1700,27 +1969,65 @@ void tables::add_prog(flat_prog m, const vector<production>& g, bool mknums) {
 	if (optimize) bdd::gc();
 }
 
-pair<bools, uints> tables::deltail(size_t len1, size_t len2) const {
-	bools ex(len1 * bits, false);
-	uints perm = perm_init(len1 * bits);
-	for (size_t n = 0; n != len1; ++n)
-		for (size_t k = 0; k != bits; ++k)
-			if (n >= len2) ex[pos(k, n, len1)] = true;
-			else perm[pos(k, n, len1)] = pos(k, n, len2);
+pair<bools, uints> tables::deltail(const bitsmeta& abm, const bitsmeta& tblbm) {
+	size_t args = abm.get_args();
+	size_t newargs = tblbm.get_args();
+	bools ex(abm.args_bits, false);
+	uints perm = perm_init(abm.args_bits); // abm.perm_init();
+	for (size_t n = 0; n != args; ++n)
+		for (size_t k = 0; k != abm.get_bits(n); ++k)
+			if (n >= newargs) ex[abm.pos(k, n, args)] = true;
+			else perm[abm.pos(k, n, args)] = tblbm.pos(k, n, newargs);
+	// permute is not applied right away, rather saved into alt ex/perm
+	return { ex, perm };
+}
+/*
+shrinks from alt to tbl domain/bits (temp right-side args are being removed)
+(TODO: args/newargs are not needed)
+*/
+pair<bools, uints> tables::deltail(size_t args, size_t newargs,
+	const bitsmeta& abm, const bitsmeta& tblbm) const {
+	DBG(assert(args == abm.get_args()););
+	DBG(assert(newargs == tblbm.get_args()););
+	// args * bits => bm.args_bits
+	bools ex(abm.args_bits, false); 
+	uints perm = perm_init(abm.args_bits); // abm.perm_init();
+	for (size_t n = 0; n != args; ++n)
+		for (size_t k = 0; k != abm.get_bits(n); ++k)
+			if (n >= newargs) ex[abm.pos(k, n, args)] = true;
+			else perm[abm.pos(k, n, args)] = tblbm.pos(k, n, newargs);
+	// permute is not applied right away, rather saved into alt ex/perm
 	return { ex, perm };
 }
 
-uints tables::addtail(size_t len1, size_t len2) const {
-	uints perm = perm_init(len1 * bits);
-	for (size_t n = 0; n != len1; ++n)
-		for (size_t k = 0; k != bits; ++k)
-			perm[pos(k, n, len1)] = pos(k, n, len2);
+/*
+expands from header/rule/tbl into alt domain/bits
+(TODO: args/newargs are not needed)
+*/
+uints tables::addtail(size_t args, size_t newargs,
+	const bitsmeta& tblbm, const bitsmeta& abm) const{
+	DBG(assert(args == tblbm.get_args()););
+	DBG(assert(newargs == abm.get_args()););
+	// args * bits => tblbm.args_bits
+	uints perm = perm_init(tblbm.args_bits); // tblbm.perm_init();
+	for (size_t n = 0; n != args; ++n)
+		for (size_t k = 0; k != tblbm.get_bits(n); ++k)
+			perm[tblbm.pos(k, n, args)] = abm.pos(k, n, newargs);
+	// D: shouldn't we fill in the 'blanks' (i.e. 0- the new bits)
 	return perm;
 }
 
-spbdd_handle tables::addtail(cr_spbdd_handle x, size_t len1, size_t len2) const{
-	if (len1 == len2) return x;
-	return x ^ addtail(len1, len2);
+/* 
+expands from header/rule/tbl into alt domain/bits 
+(TODO: args/newargs are not needed)
+*/
+spbdd_handle tables::addtail(cr_spbdd_handle x, size_t args, size_t newargs,
+	const bitsmeta& tblbm, const bitsmeta& abm) const{
+	DBG(assert(args == tblbm.get_args()););
+	DBG(assert(newargs == abm.get_args()););
+	if (args == newargs) return x;
+	// permute is applied right away
+	return x ^ addtail(args, newargs, tblbm, abm);
 }
 
 spbdd_handle tables::body_query(body& b, size_t /*DBG(len)*/) {
@@ -1773,15 +2080,15 @@ spbdd_handle tables::alt_query(alt& a, size_t /*DBG(len)*/) {
 			int_t cnt = bdd::satcount(x->b);
 
 			// just equate last var (output) with the count
-			x = from_sym(a.vm.at(bltinout), a.varslen, mknum(cnt));
+			x = from_sym(a.vm.at(bltinout), a.varslen, mknum(cnt), a); // .bm);
 			v1.push_back(x);
 			wcout << L"alt_query (cnt):" << cnt << L"" << endl;
 		}
 		else if (bltintype == L"rnd") {
 			DBG(assert(a.bltinargs.size() == 3););
 			// TODO: check that it's num const
-			int_t arg0 = int_t(a.bltinargs[0] >> 2);
-			int_t arg1 = int_t(a.bltinargs[1] >> 2);
+			int_t arg0 = int_t(un_mknum(a.bltinargs[0])); // a.bltinargs[0] >> 2
+			int_t arg1 = int_t(un_mknum(a.bltinargs[1])); // a.bltinargs[1] >> 2
 			if (arg0 > arg1) swap(arg0, arg1);
 
 			//int_t rnd = arg0 + (std::rand() % (arg1 - arg0 + 1));
@@ -1790,7 +2097,7 @@ spbdd_handle tables::alt_query(alt& a, size_t /*DBG(len)*/) {
 			std::uniform_int_distribution<> distr(arg0, arg1);
 			int_t rnd = distr(gen);
 
-			x = from_sym(a.vm.at(bltinout), a.varslen, mknum(rnd));
+			x = from_sym(a.vm.at(bltinout), a.varslen, mknum(rnd), a); // .bm);
 			v1.push_back(x);
 			wcout << L"alt_query (rnd):" << rnd << L"" << endl;
 		}
@@ -1798,14 +2105,25 @@ spbdd_handle tables::alt_query(alt& a, size_t /*DBG(len)*/) {
 			wstring ou{L"output"};
 			size_t n{0};
 			// D: args are now [0,1,...] (we no longer have the bltin as 0 arg)
-			if (a.bltinargs.size() >= 2) ++n,
-				ou = lexeme2str(dict.get_sym(a.bltinargs[0]));
+			if (a.bltinargs.size() >= 2) {
+				++n;
+				switch (a.bm.types[0].type) {
+					case base_type::STR:
+						// D: get_sym no longer handles ints/chrs, just syms. 
+						ou = lexeme2str(dict.get_sym(a.bltinargs[0]));
+						break;
+					case base_type::CHR:
+					case base_type::INT:
+					default: throw 0;
+				}
+				//ou = lexeme2str(dict.get_sym(a.bltinargs[0]));
+			}
 			wostream& os = output::to(ou);
 			do {
 				int_t arg = a.bltinargs[n++];
 				if      (arg < 0) os << get_var_lexeme(arg) << endl;
-				else if (arg & 1) os << (wchar_t)(arg >> 2);
-				else if (arg & 2) os << (int_t)  (arg >> 2);
+				else if (arg & 1) os << (wchar_t)un_mknum(arg); // arg >> 2
+				else if (arg & 2) os << (int_t)  un_mknum(arg); // arg >> 2
 				else              os << dict.get_sym(arg);
 			} while (n < a.bltinargs.size());
 		}
@@ -1844,44 +2162,9 @@ bool table::commit(DBG(size_t /*bits*/)) {
 	return x != t && (t = x, true);
 }
 
-bool bitsmeta::setargs(const ints& args, const ints& vtypes, const dict_t& dict) {
-	DBG(assert(vtypes.size() > 0);); // don't setargs if nothing to do
-	DBG(assert(args.size() == vtypes.size()););
-	if (types.size() == 0) {
-		types = vtypes;
-		vbits = vector<size_t>(types.size(), 0);
-		vargs = vector<size_t>(types.size(), 0);
-		for (size_t i = 0; i != types.size(); ++i) {
-			if (types[i] != -1) {
-				ttype t = dict.get_type(types[i]);
-				vbits[i] = t.bits;
-			}
-			vargs[i] = i; // natural ordering by default
-		}
-	} else {
-		DBG(assert(types.size() == vtypes.size()););
-		for (size_t i = 0; i != types.size(); ++i) {
-			if (vtypes[i] != -1) {
-				if (types[i] == -1) {
-					types[i] = vtypes[i];
-					ttype t = dict.get_type(types[i]);
-					vbits[i] = t.bits;
-				}
-				else {
-					ttype t1 = dict.get_type(types[i]);
-					ttype t2 = dict.get_type(vtypes[i]);
-					DBG(assert(t1.bt == t2.bt);); // base types need to match
-					if (t2.bits > t1.bits) t1.bits = t2.bits; // update if more bits
-					vbits[i] = t1.bits;
-				}
-			}
-		}
-	}
-	return true;
-}
-
-
 char tables::fwd() noexcept {
+	//static vector<bits_perm> vperms{};
+
 //	DBG(out(o::out()<<"db before:"<<endl);)
 	for (rule& r : rules) {
 		bdd_handles v(r.size());
@@ -1896,11 +2179,9 @@ char tables::fwd() noexcept {
 		(r.neg ? tbls[r.tab].del : tbls[r.tab].add).push_back(x);
 	}
 	bool b = false;
-	// D: just temp ugly static, move this out of fwd/pass in, or in tables.
-	static map<ntable, set<term>> mhits;
 	for (ntable tab = 0; (size_t)tab != tbls.size(); ++tab) {
 		table& tbl = tbls[tab];
-		bool changes = tbl.commit(DBG(bits));
+		bool changes = tbl.commit(DBG(0)); // bits));
 		b |= changes;
 		if (!changes && tbl.idbltin > -1) {
 			//lexeme bltintype = dict.get_bltin(tbl.idbltin);
@@ -1939,6 +2220,27 @@ char tables::fwd() noexcept {
 		}
 		if (tbl.unsat) return unsat = true;
 	}
+
+	static bool isfirst = true;
+	if (isfirst) {
+		isfirst = false;
+		// D: if clearing some cache is needed here (to proper bdd reorder)?
+		//bdd::cleanpermcache();
+		//smemo.clear(), ememo.clear(), leqmemo.clear();
+		// just for testing, add bit to the first table, first arg
+		ntable tab = 0;
+		size_t arg = 0;
+		// theoretically, iter stores any dynamic permutes, add_bit, reorder...
+		static iterbdds bdditer(*this);
+		bdditer.clear();
+		// first add bit/permute the tab/arg we want, adds to changes vector.
+		bdditer.permute_table(tab, arg); // , argtbls, bits, type);
+		// ...then execute / sync the rest
+		bdditer.permute_all(); // vperms, tblperms);
+		//bdd::cleanpermcache();
+		//smemo.clear(), ememo.clear(), leqmemo.clear();
+	}
+
 	return b;
 /*	if (!b) return false;
 	for (auto x : goals)
@@ -1994,13 +2296,13 @@ bool tables::run_prog(const raw_prog& p, const strs_t& strs, size_t steps,
 	return r;
 }
 
-tables::tables(bool bproof, bool optimize, bool bin_transform,
-	bool print_transformed) : dict(*new dict_t), bproof(bproof),
+tables::tables(dict_t dict, bool bproof, bool optimize, bool bin_transform,
+	bool print_transformed) : dict(move(dict)), bproof(bproof),
 	optimize(optimize), bin_transform(bin_transform),
-	print_transformed(print_transformed) {}
+	print_transformed(print_transformed) {} // dict(*new dict_t)
 
 tables::~tables() {
-	if (optimize) delete &dict;
+	//if (optimize) delete &dict;
 	while (!bodies.empty()) {
 		body *b = *bodies.begin();
 		bodies.erase(bodies.begin());

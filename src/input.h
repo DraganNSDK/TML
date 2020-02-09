@@ -79,6 +79,7 @@ struct raw_term {
 	t_alu_op alu_op = NOP;
 	std::vector<elem> e;
 	ints arity;
+	size_t nargs = 0; // total count of args (useful for types handling later).
 	bool parse(const lexemes& l, size_t& pos, const raw_prog& prog);
 	void calc_arity();
 	void insert_parens(lexeme op, lexeme cl);
@@ -195,6 +196,7 @@ struct raw_prog {
 	std::vector<directive> d;
 	std::vector<production> g;
 	std::vector<raw_rule> r;
+	//dict_t dict;
 	std::set<lexeme, lexcmp> builtins;
 //	int_t delrel = -1;
 	bool parse(const lexemes& l, size_t& pos);
@@ -202,9 +204,16 @@ struct raw_prog {
 
 struct raw_progs {
 	std::vector<raw_prog> p;
-	raw_progs(FILE*);
-	raw_progs(const std::wstring& s = L"");
-	void parse(const std::wstring& s, bool newseq = true);
+	raw_progs();
+	//raw_progs(FILE*);
+	//raw_progs(const std::wstring& s = L"");
+	//raw_progs(raw_progs&& progs) {
+	//	for (raw_prog& rp : progs.p) {
+	//		p.push_back(std::move(rp));
+	//	}
+	//	progs.p.clear();
+	//}
+	void parse(const std::wstring& s, dict_t& dict, bool newseq = true);
 };
 
 void parse_error(cws o, std::wstring e);

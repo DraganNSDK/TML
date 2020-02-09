@@ -87,16 +87,19 @@ typedef enum  {
 	NOP, ADD, SUB, MULT, BITWOR, BITWAND, BITWXOR, SHR, SHL
 } t_alu_op;
 
-// D: TODO: a prototype of the type metadata, needed in dict etc.
-struct ttype {
-	enum basetype { NONE, INT, CHR, STR } bt = ttype::NONE;
-	size_t bits;
-	lexeme ety, ebi;
-	//ttype(basetype bt, size_t bits, const lexeme& ety, const lexeme& ebi)
-	//: bt(bt), bits(bits), ety(ety), ebi(ebi) {}
-	ttype(basetype bt, size_t bits, cws fst, cws efst, cws snd, cws esnd)
-	: bt(bt), bits(bits), ety{ fst, efst }, ebi{ snd, esnd } {}
+/* argument type's base-type enum */
+//enum class basetype : std::uint8_t { NONE = 0, INT, CHR, STR };
+enum class base_type { NONE = 0, INT, CHR, STR };
+
+// D: make this just an int_t, lower bits for type + bitness the rest.
+struct arg_type {
+	base_type type = base_type::NONE;
+	size_t bitness;
+	arg_type() : type(base_type::NONE), bitness(0) {}
+	arg_type(base_type type, size_t bitness) : type(type), bitness(bitness) {}
 };
 
-#endif
+typedef std::vector<arg_type> argtypes;
+
+#endif // __DEFS_H__
 //#define TRANSFORM_BIN_DRIVER

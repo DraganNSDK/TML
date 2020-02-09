@@ -10,6 +10,9 @@
 // from the Author (Ohad Asor).
 // Contact ohad@idni.org for requesting a permission. This license may be
 // modified over time by the Author.
+#ifndef __BDD_H__
+#define __BDD_H__
+
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -227,6 +230,7 @@ public:
 	}
 	static void init();
 	static void gc();
+	static void cleanpermcache();
 	static std::wostream& stats(std::wostream& os);
 	inline static int_t hi(int_t x) {
 		return	x < 0 ? V[-x].v < 0 ? -V[-x].l : -V[-x].h
@@ -279,3 +283,5 @@ private:
 	bools p;
 	void sat(int_t x);
 };
+
+#endif // __BDD_H__

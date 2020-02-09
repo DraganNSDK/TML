@@ -177,7 +177,7 @@ bool driver::prog_run(raw_progs& rp, size_t n, size_t steps,
 }
 
 void driver::add(wstring& prog, bool newseq) {
-	rp.parse(prog, newseq);
+	rp.parse(prog, tbl->get_dict(), newseq);
 	if (!newseq) transform(rp, pd.n, pd.strs);
 }
 
@@ -264,18 +264,31 @@ void driver::init() {
 	bdd::init();
 }
 
-driver::driver(raw_progs rp, options o) : rp(rp), opts(o) {
-	tbl = new tables(opts.enabled(L"proof"), opts.enabled(L"optimize"),
-		opts.enabled(L"bin"), opts.enabled(L"t"));
+// driver(raw_progs(s), o) 
+driver::driver(wstring s, options o) : rp(), opts(o) {
+	dict_t dict;
+	// parse outside the rp's ctor
+	rp.parse(s, dict);
+	// we don't need the dict any more, tables owns it from now on...
+	tbl = new tables(move(dict), opts.enabled(L"proof"), 
+		opts.enabled(L"optimize"), opts.enabled(L"bin"), opts.enabled(L"t"));
 }
-driver::driver(FILE *f,   options o) : driver(raw_progs(f), o) {}
-driver::driver(wstring s, options o) : driver(raw_progs(s), o) {}
-driver::driver(char *s,   options o) : driver(raw_progs(s2ws(string(s))), o) {}
-driver::driver(options o)            : driver(raw_progs(o.input()), o) {}
+driver::driver(FILE *f,   options o) : driver(file_read_text(f), o) {}
+driver::driver(char *s,   options o) : driver(s2ws(string(s)), o) {}
+driver::driver(options o)            : driver(o.input(), o) {}
 driver::driver(FILE *f)              : driver(f, options()) {}
 driver::driver(wstring s)            : driver(s, options()) {}
 driver::driver(char *s)              : driver(s, options()) {}
-driver::driver(raw_progs rp)         : driver(rp, options()) {}
+//driver::driver(raw_progs rp)         : driver(move(rp), options()) {}
+//driver::driver(raw_progs rp, options o) : rp(move(rp)), opts(o) {
+//	//rp.parse();
+//	tbl = new tables(opts.enabled(L"proof"), opts.enabled(L"optimize"),
+//		opts.enabled(L"bin"), opts.enabled(L"t"));
+//}
+//driver::driver(FILE *f,   options o):driver(raw_progs(f), o) {}
+//driver::driver(wstring s, options o):driver(raw_progs(s), o) {}
+//driver::driver(char *s,   options o):driver(raw_progs(s2ws(string(s))), o) {}
+//driver::driver(options o)            : driver(raw_progs(o.input()), o) {}
 
 driver::~driver() {
 	if (tbl) delete tbl;

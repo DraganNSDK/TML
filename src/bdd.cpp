@@ -560,6 +560,15 @@ wostream& bdd::stats(wostream& os) {
 		" AM: " << AM.size() << " C: "<< C.size();
 }
 
+void bdd::cleanpermcache() {
+	memos_perm_ex.clear();
+	//CX.clear();
+	//AMX.clear();
+	memos_ex.clear();
+	//CXP.clear();
+	//AMXP.clear();
+	memos_perm.clear();
+}
 void bdd::gc() {
 	S.clear();
 	for (auto x : bdd_handle::M) mark_all(x.first);

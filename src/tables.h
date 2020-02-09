@@ -22,6 +22,9 @@
 #endif
 #include "bdd.h"
 #include "term.h"
+#include "bitsmeta.h"
+#include "iterbdds.h"
+#include "dict.h"
 typedef int_t rel_t;
 struct raw_term;
 struct raw_prog;
@@ -29,7 +32,7 @@ struct raw_rule;
 struct raw_sof;
 struct raw_form_tree;
 class tables;
-class dict_t;
+//class dict_t;
 
 typedef std::pair<rel_t, ints> sig;
 typedef std::map<int_t, size_t> varmap;
@@ -67,6 +70,9 @@ struct body {
 	bools ex;
 	uints perm;
 	spbdd_handle q, tlast, rlast;
+	// TODO: to reinit get_perm on add_bit (well in the pfp/fwd), temp fix only.
+	// (not sure how else to consistently perm from old bits perm to new one?)
+	ints vals; 
 //	static std::set<body*, ptrcmp<body>> &s;
 	bool operator<(const body& t) const {
 		if (q != t.q) return q < t.q;
@@ -78,30 +84,7 @@ struct body {
 	}
 };
 
-// D: TODO: this is a temp fix to bring table/alt to share data, pass around.
-// I'd rather do this by making pos and methods be part of alt/table, or similar
-struct bitsmeta {
-	ints types;
-	std::vector<size_t> vbits;
-	std::vector<size_t> vargs;
-	bool setargs(const ints& args, const ints& vtypes, const dict_t& dict);
-	//	std::vector<size_t> vbits, std::vector<size_t> vargs,
-	// , const bitsmeta& bm
-	inline size_t leftbits(size_t arg, size_t args) const {
-		DBG(assert(arg < args););
-		// we can improve this by keeping vector of sums also, if needed
-		// (then it won't be const, cache here as served)
-		size_t lsum = 0;
-		for (size_t i = 0; i != args; ++i) {
-			if (vargs[i] == arg) break;
-			lsum += vbits[vargs[i]];
-			DBG(assert(i != args - 1);); // need to exit earlier
-		}
-		return lsum;
-	}
-
-};
-
+struct table;
 struct alt : public std::vector<body*> {
 	spbdd_handle rng = htrue, eq = htrue, rlast = hfalse;
 	size_t varslen;
@@ -113,10 +96,15 @@ struct alt : public std::vector<body*> {
 	std::map<size_t, int_t> inv;
 	std::map<size_t, spbdd_handle> levels;
 //	static std::set<alt*, ptrcmp<alt>> &s;
-	int_t idbltin = -1; //lexeme bltintype;
+	int_t idbltin = -1;
 	ints bltinargs;
 	size_t bltinsize;
 	bitsmeta bm;
+	// tracks argument dependencies across the rules, tables
+	std::map<size_t, std::vector<std::pair<ntable,size_t>>> argsdep;
+	// we could (rarely) have multiple bodies of same tbl using different vars
+	std::map<std::pair<ntable, size_t>, std::vector<size_t>> invargsdep;
+	std::set<ntable> depends;
 	bool operator<(const alt& t) const {
 		if (varslen != t.varslen) return varslen < t.varslen;
 		if (rng != t.rng) return rng < t.rng;
@@ -158,15 +146,18 @@ struct table {
 	ints bltinargs;
 	size_t bltinsize;
 	bitsmeta bm;
-	//ints types;
-	//std::vector<size_t> vbits;
-	//std::vector<size_t> vargs;
-	//bool setargs(const ints& args, const ints& vtypes, const dict_t& dict);
+	const dict_t& dict; // TODO: remove this dep., only needed for dict.nsyms()
 	bool commit(DBG(size_t));
+	spbdd_handle init_bits();
+	//table() {}
+	table(const sig& s, size_t len, const dict_t& dict) 
+		: s(s), len(len), t{hfalse}, bm(len), dict(dict) {}
 };
 
 struct form;
+
 class tables {
+	friend struct iterbdds;
 	friend std::ostream& operator<<(std::ostream& os, const tables& tbl);
 	friend std::istream& operator>>(std::istream& is, tables& tbl);
 public:
@@ -216,104 +207,89 @@ private:
 	std::vector<rule> rules;
 	std::vector<level> levels;
 	std::map<ntable, std::set<ntable>> deps;
+	// D: Q: similar to deps but this is just immediate rule(tbl) dependency?
+	std::map<ntable, std::set<ntable>> depends;
+	std::map<ntable, std::set<term>> mhits;
+
 	alt get_alt(const std::vector<raw_term>&);
 	void get_alt(const term_set& al, const term& h, std::set<alt>& as);
 	//void get_alt(const std::set<term>& al, const term& h, std::set<alt>&as);
 	rule get_rule(const raw_rule&);
-	void get_sym(int_t s, size_t arg, size_t args, spbdd_handle& r) const;
-	void get_var_ex(size_t arg, size_t args, bools& b) const;
+	
+	template<typename T> void get_sym(
+		int_t s, size_t n, size_t args, spbdd_handle& r, const T& at) const {
+		return get_sym(s, n, args, r, at.bm);
+	}
+	void get_sym(
+		int_t s, size_t n, size_t args, spbdd_handle& r, c_bitsmeta& bm) const;
+
+	template<typename T> static void get_var_ex(
+		size_t arg, size_t args, bools& vbs, const T& at) {
+		return get_var_ex(arg, args, vbs, at.bm);
+	}
+	static void get_var_ex(
+		size_t arg, size_t args, bools& vbs, c_bitsmeta& bm); // const;
+
 	void get_alt_ex(alt& a, const term& h) const;
 	void merge_extensionals();
 
-	int_t syms = 0, nums = 0, chars = 0;
-	size_t bits = 2;
-	dict_t& dict;
+	//int_t syms = 0, nums = 0, chars = 0;
+	//size_t bits = 2;
+	dict_t dict; // dict_t& dict;
 	bool bproof, datalog, optimize, unsat = false, bcqc = true,
 		 bin_transform = false, print_transformed;
 
 	size_t max_args = 0;
 	std::map<std::array<int_t, 6>, spbdd_handle> range_memo;
 
-	size_t pos(size_t bit, size_t nbits, size_t arg, size_t args) const {
-		DBG(assert(bit < nbits && arg < args);)
-		return (nbits - bit - 1) * args + arg;
-	}
-
-	size_t pos(size_t bit_from_right, size_t arg, size_t args) const {
-		DBG(assert(bit_from_right < bits && arg < args);)
-		return (bits - bit_from_right - 1) * args + arg;
-	}
-
-	// std::vector<size_t> vbits, std::vector<size_t> vargs, 
-	/*
-	This is the ordered variable-bits pos
-	(it's static atm but we should make this part of alt or table)
-	- vbits - contains variable 'bits' # for each of the arg (needed to calc.)
-	- vargs - vector of arg-s ordered (has to contain all args, no duplicates)
-	- lsum - sum of all the bits 'on the left' (to optimize, same for all bit-s)
-	*/
-	inline static size_t pos(size_t bit, size_t arg, size_t args, 
-		const bitsmeta& bm, size_t lsum = 0) { // const 
-		DBG(assert(bit < bm.vbits[arg] && arg < args););
-		if (lsum == 0 && arg != bm.vargs[0])
-			lsum = bm.leftbits(arg, args); // bm.vbits, bm.vargs
-		return lsum + (bm.vbits[arg] - bit - 1);
-	}
-
-	/*
-	This is the new variable-bits pos
-	- varbits - contains variable 'bits' for each of the arg (needed to calc.)
-	- lsum - sum of all the bits 'on the left' (to optimize, same for all bit-s)
-	*/
-	inline static size_t pos(
-		size_t bit, std::vector<size_t> varbits, 
-		size_t arg, size_t args, size_t lsum = 0) { // const 
-		DBG(assert(bit < varbits[arg] && arg < args););
-		// we can improve this by keeping vector of sums also, if needed
-		if (lsum == 0 && arg != 0)
-			for (size_t i = 0; i != arg; ++i) lsum += varbits[i];
-		return lsum + (varbits[arg] - bit - 1);
-		// for 'args-first', we'd need to iter bit by bit, count arg-s that have 
-		// that bit etc., it's not worth it, I'd suggest the above (bits-first).
-		//size_t argsum = 0;
-		//for (size_t b = 0; b != bit; ++b) { // bit < varbits[arg]
-		//	size_t nargs = 0;
-		//	// order and optimize this (if worth it)
-		//	for (size_t i = 0; i != args; ++i) if (varbits[i] > b) ++nargs;
-		//	argsum += nargs;
-		//}
-		//return argsum + arg;
-	}
-
 	size_t arg(size_t v, size_t args) const {
 		return v % args;
 	}
 
-	size_t bit(size_t v, size_t args) const {
-		return bits - 1 - v / args;
-	}
+	//size_t bit(size_t v, size_t args) const {
+	//	return bits - 1 - v / args;
+	//}
 
-	spbdd_handle from_bit(size_t b, size_t arg, size_t args, int_t n) const{
-		return ::from_bit(pos(b, arg, args), n & (1 << b));
+	template<typename T> spbdd_handle from_sym(
+		size_t arg, size_t args, int_t i, const T& altbl) const {
+		return from_sym(arg, args, i, altbl.bm);
 	}
-	spbdd_handle from_bit(size_t bit, size_t arg, size_t args, int_t n,
-		const bitsmeta& bm, size_t lsum) const {
-		return ::from_bit(pos(bit, arg, args, bm, lsum), n & (1 << bit));
+	spbdd_handle from_sym(size_t arg, size_t args, int_t i, c_bitsmeta&) const;
+
+	template<typename T> spbdd_handle from_sym_eq(
+		size_t p1, size_t p2, size_t args, const T& altbl) const {
+		return from_sym_eq(p1, p2, args, altbl.bm);
 	}
-	spbdd_handle from_sym(size_t arg, size_t args, int_t i) const;
-	spbdd_handle from_sym(size_t arg, size_t args, int_t i, 
+	spbdd_handle from_sym_eq(
+		size_t p1, size_t p2, size_t args, c_bitsmeta& bm) const;
+
+	void init_bits();
+	static std::pair<bools, uints> permex_add_bit(
+		ints vals, const varmap& vm, c_bitsmeta& bm, c_bitsmeta& altbm);
+	static perminfo add_bit_perm(bitsmeta& bm, size_t arg, size_t args);
+	static spbdd_handle add_bit(
+		spbdd_handle h, perminfo& perm, size_t arg, size_t args);
+
+	template<typename T> spbdd_handle leq_const(
+		int_t c, size_t arg, size_t args, const T& altbl) const {
+		return leq_const(c, arg, args, altbl.bm);
+	}
+	spbdd_handle leq_const(
+		int_t c, size_t arg, size_t args, const bitsmeta& bm) const;
+	spbdd_handle leq_const(int_t c, size_t arg, size_t args, size_t bit, 
+		size_t bits, const bitsmeta& bm) const;
+
+	template<typename T> spbdd_handle leq_var(
+		size_t arg1, size_t arg2, size_t args, const T& at) const {
+		return leq_var(arg1, arg2, args, at.bm);
+	}
+	spbdd_handle leq_var(size_t arg1, size_t arg2, size_t args,
 		const bitsmeta& bm) const;
-	spbdd_handle from_sym_eq(size_t p1, size_t p2, size_t args) const;
+	spbdd_handle leq_var(size_t arg1, size_t arg2, size_t args, size_t bit, 
+		const bitsmeta& bm) const;
 
-	void add_bit();
-	spbdd_handle add_bit(spbdd_handle x, size_t args);
-	spbdd_handle leq_const(int_t c, size_t arg, size_t args, size_t bit)
-		const;
-	spbdd_handle leq_var(size_t arg1, size_t arg2, size_t args) const;
-	spbdd_handle leq_var(size_t arg1, size_t arg2, size_t args, size_t bit)
-		const;
-	void range(size_t arg, size_t args, bdd_handles& v);
-	spbdd_handle range(size_t arg, ntable tab);
+	void range(size_t arg, size_t args, bdd_handles& v, const bitsmeta& bm) const;
+	spbdd_handle range(size_t arg, ntable tab, const bitsmeta& bm);
 	void range_clear_memo() { range_memo.clear(); }
 
 	sig get_sig(const term& t);
@@ -321,25 +297,34 @@ private:
 	sig get_sig(const lexeme& rel, const ints& arity);
 
 	ntable add_table(sig s);
-	uints get_perm(const term& t, const varmap& m, size_t len) const;
-	template<typename T>
-	static varmap get_varmap(const term& h, const T& b, size_t &len);
-	//spbdd_handle get_alt_range(const term& h, const std::set<term>& a,
-	//		const varmap& vm, size_t len);
+	static uints get_perm(const ints& vals, const varmap& m, 
+		const bitsmeta& tblbm, const bitsmeta& altbm); // const
+	uints get_perm(const term& t, const varmap& m, size_t len,
+		const bitsmeta& tblbm, const bitsmeta& altbm) const;
+	void init_varmap(alt& a, const term& h, const term_set& al);
+	spbdd_handle get_alt_range(
+		const term&, const term_set&, const varmap&, size_t len, const alt&);
 	spbdd_handle get_alt_range(const term& h, const term_set& a,
-		const varmap& vm, size_t len);
+		const varmap& vm, size_t len, const bitsmeta& bm);
 	spbdd_handle from_term(const term&, body *b = 0,
 		std::map<int_t, size_t>*m = 0, size_t hvars = 0);
-	body get_body(const term& t, const varmap&, size_t len) const;
+	inline body get_body(const term&, const varmap&, size_t, const alt&) const;
+	body get_body(
+		const term& t, const varmap&, size_t len, const bitsmeta& bm) const;
 //	void align_vars(std::vector<term>& b) const;
 	spbdd_handle from_fact(const term& t);
 	term from_raw_term(const raw_term&, bool ishdr = false, size_t orderid = 0);
-	std::pair<bools, uints> deltail(size_t len1, size_t len2) const;
-	uints addtail(size_t len1, size_t len2) const;
-	spbdd_handle addtail(cr_spbdd_handle x, size_t len1, size_t len2) const;
+	static std::pair<bools, uints> deltail(
+		const bitsmeta& abm, const bitsmeta& tblbm);
+	std::pair<bools, uints> deltail(size_t args, size_t newargs,
+		const bitsmeta& abm, const bitsmeta& tblbm) const;
+	uints addtail(size_t len1, size_t len2, 
+		const bitsmeta& tblbm, const bitsmeta& abm) const;
+	spbdd_handle addtail(cr_spbdd_handle x, size_t len1, size_t len2,
+		const bitsmeta& tblbm, const bitsmeta& abm) const;
 	spbdd_handle body_query(body& b, size_t);
 	spbdd_handle alt_query(alt& a, size_t);
-	DBG(vbools allsat(spbdd_handle x, size_t args) const;)
+	DBG(vbools allsat(spbdd_handle x, size_t args, const bitsmeta& bm) const;)
 	void decompress(spbdd_handle x, ntable tab, const cb_decompress&,
 		size_t len = 0, bool allowbltins = false) const;
 	std::set<term> decompress();
@@ -355,7 +340,7 @@ private:
 	void get_goals();
 	void print_env(const env& e, const rule& r) const;
 	void print_env(const env& e) const;
-	struct elem get_elem(int_t arg) const;
+	struct elem get_elem(int_t arg, const arg_type& type) const;
 	raw_term to_raw_term(const term& t) const;
 	void out(std::wostream&, spbdd_handle, ntable) const;
 	void out(spbdd_handle, ntable, const rt_printer&) const;
@@ -399,26 +384,27 @@ private:
 	//XXX: arithmetic support, work in progress
 	bool isalu_handler(const term& t, alt& a, spbdd_handle &leq);
 	spbdd_handle leq_var(size_t arg1, size_t arg2, size_t args,
-		size_t bit, spbdd_handle x) const;
-	spbdd_handle add_var_eq(size_t arg0, size_t arg1, size_t arg2, size_t args);
+		size_t bit, spbdd_handle x, const bitsmeta& bm) const;
+	spbdd_handle add_var_eq(size_t arg0, size_t arg1, size_t arg2, size_t args,
+		const bitsmeta& bm);
 	spbdd_handle full_addder_carry(size_t var0, size_t var1, size_t n_vars,
-		uint_t b, spbdd_handle r) const;
+		uint_t b, spbdd_handle r, const bitsmeta& bm) const;
 	spbdd_handle full_adder(size_t var0, size_t var1, size_t n_vars,
-		uint_t b) const;
+		uint_t b, const bitsmeta& bm) const;
 	spbdd_handle shr_test(size_t var0, int_t n1, size_t var2,
 		size_t n_vars);
 	spbdd_handle shl(size_t var0, int_t n1, size_t var2,
-		size_t n_vars);
+		size_t n_vars, const bitsmeta& bm);
 	spbdd_handle full_addder_carry_shift(size_t var0, size_t var1, size_t n_vars,
-		uint_t b, uint_t s, spbdd_handle r) const;
+		uint_t b, uint_t s, spbdd_handle r, const bitsmeta& bm) const;
 	spbdd_handle full_adder_shift(size_t var0, size_t var1, size_t n_vars,
-		uint_t b, uint_t s) const;
+		uint_t b, uint_t s, const bitsmeta& bm) const;
 	spbdd_handle add_ite(size_t var0, size_t var1, size_t args, uint_t b,
-		uint_t s);
+		uint_t s, const bitsmeta& bm);
 	spbdd_handle add_ite_init(size_t var0, size_t var1, size_t args, uint_t b,
 		uint_t s);
 	spbdd_handle add_ite_carry(size_t var0, size_t var1, size_t args, uint_t b,
-		uint_t s);
+		uint_t s, const bitsmeta& bm);
 	spbdd_handle mul_var_eq(size_t var0, size_t var1, size_t var2,
 				size_t n_vars);
 	spbdd_handle mul_var_eq_ext(size_t var0, size_t var1, size_t var2,
@@ -426,10 +412,11 @@ private:
 	spbdd_handle bdd_test(size_t n_vars);
 	spbdd_handle bdd_add_test(size_t n_vars);
 	spbdd_handle bdd_mult_test(size_t n_vars);
-	uints get_perm_ext(const term& t, const varmap& m, size_t len) const;
+	uints get_perm_ext(const term& t, const varmap& m, size_t len, 
+		const bitsmeta& tblbm, const bitsmeta& abm) const;
 
 public:
-	tables(bool bproof = false, bool optimize = true,
+	tables(dict_t dict, bool bproof = false, bool optimize = true,
 		bool bin_transform = false, bool print_transformed = false);
 	~tables();
 	size_t step() { return nstep; }
@@ -444,6 +431,7 @@ public:
 	void out(emscripten::val o) const;
 #endif
 	void set_proof(bool v) { bproof = v; }
+	dict_t& get_dict() { return dict; }
 };
 
 struct transformer;
