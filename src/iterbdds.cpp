@@ -32,7 +32,7 @@ bool iterbdds::permute_table(ntable tab, size_t arg) {
 	table& tb = tbls[tab];
 	size_t bits = tb.bm.types[arg].bitness + 1;
 	base_type type = tb.bm.types[arg].type;
-	permute_table(tab, arg, argtbls, bits, type);
+	return permute_table(tab, arg, argtbls, bits, type);
 }
 
 bool iterbdds::permute_table(ntable tab, size_t arg, 

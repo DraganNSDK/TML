@@ -41,7 +41,7 @@ struct term : public ints {
 	// D: there's a dillema how to store types (where, how much, w/ any arg or 
 	// just for vars). Just w/ vars for the moment, but I'm not sure.
 	argtypes types;
-	ints nums, irevs;
+	ints nums; // , irevs;
 	term() {}
 	term(bool neg, textype extype, t_alu_op alu_op, ntable tab, 
 		const ints& args, const argtypes& types, const ints& nums,
@@ -86,54 +86,52 @@ struct term : public ints {
 		//	l.begin(), l.end(), r.begin(), r.end(), intscmp());
 	}
 
-	inline ints reverse() const {
-		const ints& args = (const ints&)*this;
-		ints out(args.size());
-		for (size_t i = 0; i < args.size(); ++i)
-			if (args[i] > 0) {
-				size_t bits = types[i].bitness;
-				out[i] = reverse(args[i], bits);
-			}
-		return out;
-	}
-
-	static ints reverse(const ints& args, const argtypes& types) {
-		ints out(args.size());
-		for (size_t i = 0; i < args.size(); ++i)
-			if (args[i] > 0) { 
-				size_t bits = types[i].bitness;
-				out[i] = reverse(args[i], bits);
-			}
-		return out;
-	}
-	static inline bool revless(
-		const int_t& l, const int_t& r, size_t i, const argtypes& types) {
-		if (l < 0) return r >= 0 || l < r;
-		if (r < 0) return true;
-		size_t bits = types[i].bitness;
-		return reverse(l, bits) < reverse(r, bits);
-
-	}
-	//template <typename T> 
-	static inline int_t reverse(int_t n, size_t b) //  = sizeof(T) * CHAR_BIT
-	{
-		//DBG(assert(b <= std::numeric_limits<T>::digits););
-		int_t rv = 0;
-		for (size_t i = 0; i < b; ++i, n >>= 1) rv = (rv << 1) | (n & 0x01);
-		return rv;
-	}
+	//inline ints reverse() const {
+	//	const ints& args = (const ints&)*this;
+	//	ints out(args.size());
+	//	for (size_t i = 0; i < args.size(); ++i)
+	//		if (args[i] > 0) {
+	//			size_t bits = types[i].bitness;
+	//			out[i] = reverse(args[i], bits);
+	//		}
+	//	return out;
+	//}
+	//static ints reverse(const ints& args, const argtypes& types) {
+	//	ints out(args.size());
+	//	for (size_t i = 0; i < args.size(); ++i)
+	//		if (args[i] > 0) { 
+	//			size_t bits = types[i].bitness;
+	//			out[i] = reverse(args[i], bits);
+	//		}
+	//	return out;
+	//}
+	//static inline bool revless(
+	//	const int_t& l, const int_t& r, size_t i, const argtypes& types) {
+	//	if (l < 0) return r >= 0 || l < r;
+	//	if (r < 0) return true;
+	//	size_t bits = types[i].bitness;
+	//	return reverse(l, bits) < reverse(r, bits);
+	//}
+	////template <typename T> 
+	//static inline int_t reverse(int_t n, size_t b) //  = sizeof(T) * CHAR_BIT
+	//{
+	//	//DBG(assert(b <= std::numeric_limits<T>::digits););
+	//	int_t rv = 0;
+	//	for (size_t i = 0; i < b; ++i, n >>= 1) rv = (rv << 1) | (n & 0x01);
+	//	return rv;
+	//}
 	void replace(const std::map<int_t, int_t>& m);
 };
 
-struct cmptermrev {
-	bool operator()(const term& l, const term& r) const {
-		if (l.orderid != r.orderid) return l.orderid < r.orderid;
-		if (l.neg != r.neg) return l.neg;
-		if (l.goal != r.goal) return l.goal;
-		return l.irevs < r.irevs;
-		//return (const ints&)l < r;
-	}
-};
+//struct cmptermrev {
+//	bool operator()(const term& l, const term& r) const {
+//		if (l.orderid != r.orderid) return l.orderid < r.orderid;
+//		if (l.neg != r.neg) return l.neg;
+//		if (l.goal != r.goal) return l.goal;
+//		return l.irevs < r.irevs;
+//		//return (const ints&)l < r;
+//	}
+//};
 
 std::wostream& operator<<(std::wostream& os, const term& t);
 std::vector<term> to_vec(const term& h, const std::set<term>& b);

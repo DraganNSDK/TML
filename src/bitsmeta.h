@@ -30,6 +30,9 @@ struct bitsmeta {
 	std::map<size_t, size_t> mleftbits;
 	size_t args_bits = 0; // like args * bits (just now variable sum)
 
+	size_t maxbits;
+	std::map<size_t, std::map<size_t, size_t>> mleftargs;
+
 	bitsmeta() {}
 	bitsmeta(size_t len) : types(len), vargs(len, 0), nterms{0}, args_bits{0} {
 		for (size_t i = 0; i != len; ++i) vargs[i] = i; // native ordering
@@ -48,7 +51,7 @@ struct bitsmeta {
 		//bm.init(dict);
 		// we allow only one bit add at the time (for the moment)
 		DBG(assert(bits2add == 1););
-		size_t lsum = 0, args = types.size();
+		size_t lsum = 0, args = types.size(), maxb = 0;
 		mleftbits.clear();
 		mleftbits[vargs[0]] = lsum;
 		++types[arg].bitness; // increase bits...
@@ -57,8 +60,22 @@ struct bitsmeta {
 		for (size_t i = 0; i < args-1; ++i) { // process [0..args-2] (skip last)
 			lsum += types[vargs[i]].bitness;
 			mleftbits[vargs[i+1]] = lsum;
+			maxb = std::max(maxb, types[vargs[i]].bitness);
 		}
 		args_bits = mleftbits.at(vargs[args-1]) + types[vargs[args-1]].bitness;
+		maxbits = maxb + types[vargs[args-1]].bitness;
+
+		size_t argsum = 0;
+		if (maxbits == 0) {
+			return;
+		}
+		for (int_t bit = maxbits - 1; bit >= 0; --bit) {
+			std::map<size_t, size_t>& mpos = mleftargs[bit];
+			for (size_t arg = 0; arg != types.size(); ++arg)
+				if (types[vargs[arg]].bitness > size_t(bit))
+					mpos[vargs[arg]] = argsum++;
+		}
+		DBG(assert(argsum == args_bits););
 	}
 
 	int_t get_chars(size_t arg) const // TODO: 256 ? 
@@ -99,6 +116,9 @@ struct bitsmeta {
 	- vargs - vector of arg-s ordered (has to contain all args, no duplicates)
 	*/
 	size_t pos(size_t bit, size_t arg, size_t args) const { //, size_t lsum = 0
+		//const std::map<size_t, size_t>& mpos = mleftargs.at(bit);
+		//return mpos.at(arg); // vargs[arg]
+
 		DBG(assert(args == types.size()););
 		DBG(assert(bit < types[arg].bitness && arg < args););
 		size_t bits = types[arg].bitness;

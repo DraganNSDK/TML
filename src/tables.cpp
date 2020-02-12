@@ -64,9 +64,6 @@ vbools tables::allsat(spbdd_handle x, size_t args, const bitsmeta& bm) const {
 spbdd_handle tables::leq_const(
 	int_t c, size_t arg, size_t args, const bitsmeta& bm) const {
 	size_t bits = bm.types[arg].bitness;
-	//int_t nc = 0;
-	//for (int n = 0; n < bits; ++n) if (c & (1<<(bits-n-1))) nc |= 1<<n;
-	//c = nc;
 	return leq_const(c, arg, args, bits, bits, bm);
 	// D: should we cache this too, why not, I guess there could be many c-s?
 	//static ekcmemo x;
@@ -74,7 +71,7 @@ spbdd_handle tables::leq_const(
 	//size_t bits = bm.types[arg].bitness;
 	//if ((it = leqcmemo.find(x = { c, arg, args, bits })) != leqcmemo.end())
 	//	return it->second;
-	//spbdd_handle r = leq_const(c, arg, args, bits, bm);
+	//spbdd_handle r = leq_const(c, arg, args, bits, bits, bm);
 	//return leqcmemo.emplace(x, r), r;
 }
 
@@ -102,9 +99,9 @@ spbdd_handle tables::leq_const(int_t c, size_t arg, size_t args, size_t b,
 			leq_const(c, arg, args, b, bits, bm));
 
 	//if (!--b)
-	//	return (c & 1) ? htrue : // (c & 1)
+	//	return (c & 1) ? htrue :
 	//		::from_bit(bm.pos(0, arg, args), false);
-	//return (c & (1 << b)) ? // (1 << b)
+	//return (c & (1 << b)) ?
 	//	bdd_ite_var(bm.pos(b, arg, args), leq_const(c, arg, args, b, bits, bm),
 	//		htrue) :
 	//	bdd_ite_var(bm.pos(b, arg, args), hfalse,
@@ -731,8 +728,8 @@ void tables::out(wostream& os, spbdd_handle x, ntable tab) const {
 	set<term> r;
 	decompress(x && tbls.at(tab).t, tab, [&r, &bm](const term& t) {
 		term& tm = (term&)t;
-		tm.irevs = term::reverse(tm, bm.types); // , t.types);
-		//t.irevs = t.reverse();
+		//tm.irevs = term::reverse(tm, bm.types); // , t.types);
+		////t.irevs = t.reverse();
 		r.insert(tm); 
 		});
 	for(const term& t: r) os << to_raw_term(t) << L'.' << endl;
@@ -2230,6 +2227,9 @@ char tables::fwd() noexcept {
 		// just for testing, add bit to the first table, first arg
 		ntable tab = 0;
 		size_t arg = 0;
+		wcout << L"increasing universe / bitness (tbl:0, arg:0):" << endl;
+		wcout << L"from: \t" << tbls[tab].bm.types[arg].bitness << endl;
+
 		// theoretically, iter stores any dynamic permutes, add_bit, reorder...
 		static iterbdds bdditer(*this);
 		bdditer.clear();
@@ -2237,6 +2237,8 @@ char tables::fwd() noexcept {
 		bdditer.permute_table(tab, arg); // , argtbls, bits, type);
 		// ...then execute / sync the rest
 		bdditer.permute_all(); // vperms, tblperms);
+
+		wcout << L"to:   \t" << tbls[tab].bm.types[arg].bitness << endl;
 		//bdd::cleanpermcache();
 		//smemo.clear(), ememo.clear(), leqmemo.clear();
 	}

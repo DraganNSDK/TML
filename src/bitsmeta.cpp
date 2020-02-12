@@ -33,10 +33,11 @@ using namespace std;
 void bitsmeta::init(const dict_t& dict) {
 	// vargs should be set before entering, or rerun this on ordering change.
 	mleftbits.clear();
-	size_t lsum = 0, args = types.size();
+	size_t lsum = 0, args = types.size(), maxb = 0;
 	mleftbits[vargs[0]] = lsum;
 	for (size_t i = 0; i != types.size(); ++i) {
-		arg_type& type = types[i];
+		//arg_type& type = types[i]; // this is a bug
+		arg_type& type = types[vargs[i]];
 		// just temp, update all int, chr, str bits w/ 2 extra bits (as before).
 		switch (type.type) {
 			case base_type::STR:
@@ -74,8 +75,22 @@ void bitsmeta::init(const dict_t& dict) {
 			lsum += types[vargs[i]].bitness;
 			mleftbits[vargs[i+1]] = lsum;
 		}
+		maxb = max(maxb, types[vargs[i]].bitness);
 	}
 	args_bits = mleftbits.at(vargs[args-1]) + types[vargs[args-1]].bitness;
+	maxbits = maxb;
+
+	size_t argsum = 0;
+	if (maxbits == 0) {
+		return;
+	}
+	for (int_t bit = maxbits-1; bit >= 0; --bit) {
+		map<size_t, size_t>& mpos = mleftargs[bit];
+		for (size_t arg = 0; arg != types.size(); ++arg)
+			if (types[vargs[arg]].bitness > size_t(bit))
+				mpos[vargs[arg]] = argsum++;
+	}
+	DBG(assert(argsum == args_bits););
 }
 
 bool bitsmeta::set_args(
