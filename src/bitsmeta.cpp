@@ -81,9 +81,9 @@ void bitsmeta::init(const dict_t& dict) {
 	maxbits = maxb;
 
 	size_t argsum = 0;
-	if (maxbits == 0) {
+	if (maxbits == 0)
 		return;
-	}
+	mleftargs.clear();
 	for (int_t bit = maxbits-1; bit >= 0; --bit) {
 		map<size_t, size_t>& mpos = mleftargs[bit];
 		for (size_t arg = 0; arg != types.size(); ++arg)

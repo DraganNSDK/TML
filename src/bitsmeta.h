@@ -66,9 +66,9 @@ struct bitsmeta {
 		maxbits = maxb + types[vargs[args-1]].bitness;
 
 		size_t argsum = 0;
-		if (maxbits == 0) {
+		if (maxbits == 0)
 			return;
-		}
+		mleftargs.clear();
 		for (int_t bit = maxbits - 1; bit >= 0; --bit) {
 			std::map<size_t, size_t>& mpos = mleftargs[bit];
 			for (size_t arg = 0; arg != types.size(); ++arg)
@@ -116,8 +116,8 @@ struct bitsmeta {
 	- vargs - vector of arg-s ordered (has to contain all args, no duplicates)
 	*/
 	size_t pos(size_t bit, size_t arg, size_t args) const { //, size_t lsum = 0
-		//const std::map<size_t, size_t>& mpos = mleftargs.at(bit);
-		//return mpos.at(arg); // vargs[arg]
+		const std::map<size_t, size_t>& mpos = mleftargs.at(bit);
+		return mpos.at(arg); // vargs[arg]
 
 		DBG(assert(args == types.size()););
 		DBG(assert(bit < types[arg].bitness && arg < args););
@@ -125,12 +125,16 @@ struct bitsmeta {
 		DBG(assert(bit < bits && arg < args););
 		// lsum - sum of all the bits 'on the left' (same for all bit-s)
 		size_t lsum = mleftbits.at(arg);
-		return lsum + (bits - bit - 1); // bit; // 
+		// doubled consts fix: reverse bits, ie make it from-left (as consts)
+		return lsum + bit;
+		//return lsum + (bits - bit - 1); // bit; // 
 	}
 
 	//DBG(assert(b < bits););
-	//static inline size_t bit(size_t b, size_t bits) { return b; }
-	static inline size_t bit(size_t b, size_t bits) { return (bits - b - 1); }
+	// doubled consts fix: make it again from-left (consts the same as pos)
+	/* this is bit mapping for consts basically */
+	static inline size_t bit(size_t b, size_t bits) { UNUSED(bits); return b; }
+	//static inline size_t bit(size_t b, size_t bits) { return (bits - b - 1); }
 
 	/*
 	- bit - bit from the right

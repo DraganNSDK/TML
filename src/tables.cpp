@@ -48,6 +48,7 @@ vbools tables::allsat(spbdd_handle x, size_t args, const bitsmeta& bm) const {
 	// D: this no longer works, args * bits and (k+1)*bits below, bits too etc.
 	// bits * args => bm.args_bits
 	throw 0;
+	UNUSED(args);
 	vbools v = ::allsat(x, bm.args_bits), s;
 	//for (bools b : v) {
 	//	s.emplace_back(bm.args_bits);
@@ -221,13 +222,12 @@ perminfo tables::add_bit_perm(
 	bitsmeta newbm(bm, arg, 1); // make new bm, increment arg's bits (bits+1)
 	uints perm = perm_init(bm.args_bits); // bm.perm_init(); 
 	// map from old to new pos, affects all args, for the 'arg' shift bits by 1, 
-	// free up 0 bit, for others it's the same bit<->bit (pos may still change)
 	// (bits+1) is handled internally by newbm.pos (it 'knows' each arg's bits)
-	// D: this is fix for 'doubled consts', seems we need to reverse the bits?
+	// doubled consts fix: reverse bits tb from-left (as consts), empty bits-1
 	for (size_t n = 0; n != args; ++n)
 		for (size_t b = 0; b != bm.types[n].bitness; ++b)
-			if (n==arg) perm[bm.pos(b, n, args)] = newbm.pos(b+1, n, args);
-			//if (n==arg) perm[bm.pos(b, n, args)] = newbm.pos(b, n, args);
+			//if (n==arg) perm[bm.pos(b, n, args)] = newbm.pos(b+1, n, args);
+			if (n==arg) perm[bm.pos(b, n, args)] = newbm.pos(b, n, args);
 			else		perm[bm.pos(b, n, args)] = newbm.pos(b, n, args);
 	return { newbm, perm };
 }
@@ -238,7 +238,10 @@ spbdd_handle tables::add_bit(
 	if (h == nullptr) 
 		return h;
 	bdd_handles v = { h ^ perm.perm };
-	v.push_back(::from_bit(perm.bm.pos(0, arg, args), false));
+	//v.push_back(::from_bit(perm.bm.pos(0, arg, args), false));
+	// doubled consts fix: reverse bits, ie from-left (as consts), empty bits-1
+	size_t bits = perm.bm.types[arg].bitness;
+	v.push_back(::from_bit(perm.bm.pos(bits-1, arg, args), false));
 	return bdd_and_many(move(v));
 }
 
@@ -1117,7 +1120,7 @@ void tables::get_facts(const flat_prog& m) {
 }
 
 // D: this is no longer valid, there're no 'global' nums, chars, syms, bits
-void tables::get_nums(const raw_term& t) {}
+void tables::get_nums(const raw_term& t) { UNUSED(t); }
 
 bool tables::to_pnf( form *&froot) {
 
