@@ -226,8 +226,8 @@ perminfo tables::add_bit_perm(
 	// doubled consts fix: reverse bits tb from-left (as consts), empty bits-1
 	for (size_t n = 0; n != args; ++n)
 		for (size_t b = 0; b != bm.types[n].bitness; ++b)
-			//if (n==arg) perm[bm.pos(b, n, args)] = newbm.pos(b+1, n, args);
-			if (n==arg) perm[bm.pos(b, n, args)] = newbm.pos(b, n, args);
+			if (n==arg) perm[bm.pos(b, n, args)] = newbm.pos(b+1, n, args);
+			//if (n==arg) perm[bm.pos(b, n, args)] = newbm.pos(b, n, args);
 			else		perm[bm.pos(b, n, args)] = newbm.pos(b, n, args);
 	return { newbm, perm };
 }
@@ -238,10 +238,10 @@ spbdd_handle tables::add_bit(
 	if (h == nullptr) 
 		return h;
 	bdd_handles v = { h ^ perm.perm };
-	//v.push_back(::from_bit(perm.bm.pos(0, arg, args), false));
+	v.push_back(::from_bit(perm.bm.pos(0, arg, args), false));
 	// doubled consts fix: reverse bits, ie from-left (as consts), empty bits-1
-	size_t bits = perm.bm.types[arg].bitness;
-	v.push_back(::from_bit(perm.bm.pos(bits-1, arg, args), false));
+	//size_t bits = perm.bm.types[arg].bitness;
+	//v.push_back(::from_bit(perm.bm.pos(bits-1, arg, args), false));
 	return bdd_and_many(move(v));
 }
 
@@ -2221,7 +2221,7 @@ char tables::fwd() noexcept {
 		if (tbl.unsat) return unsat = true;
 	}
 
-	static bool isfirst = true;
+	static bool isfirst = false; // true;
 	if (isfirst) {
 		isfirst = false;
 		// D: if clearing some cache is needed here (to proper bdd reorder)?

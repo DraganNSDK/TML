@@ -63,7 +63,7 @@ struct bitsmeta {
 			maxb = std::max(maxb, types[vargs[i]].bitness);
 		}
 		args_bits = mleftbits.at(vargs[args-1]) + types[vargs[args-1]].bitness;
-		maxbits = maxb + types[vargs[args-1]].bitness;
+		maxbits = std::max(maxb, types[vargs[args-1]].bitness);
 
 		size_t argsum = 0;
 		if (maxbits == 0)
@@ -133,8 +133,8 @@ struct bitsmeta {
 	//DBG(assert(b < bits););
 	// doubled consts fix: make it again from-left (consts the same as pos)
 	/* this is bit mapping for consts basically */
-	static inline size_t bit(size_t b, size_t bits) { UNUSED(bits); return b; }
-	//static inline size_t bit(size_t b, size_t bits) { return (bits - b - 1); }
+	//static inline size_t bit(size_t b, size_t bits) { UNUSED(bits); return b; }
+	static inline size_t bit(size_t b, size_t bits) { return (bits - b - 1); }
 
 	/*
 	- bit - bit from the right

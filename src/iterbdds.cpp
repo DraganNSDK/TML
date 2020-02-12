@@ -57,6 +57,7 @@ bool iterbdds::permute_table(ntable tab, size_t arg,
 		tadd = add_bit(tadd, info, arg, tb.len);
 	for (spbdd_handle& tdel : tb.del)
 		tdel = add_bit(tdel, info, arg, tb.len);
+	// D: not sure if add/del is enough? maybe run the full rule alt_query loop?
 	// stack to do all its dependencies (including rule)
 	bits_perm tperm = { tab, arg, tb.len, move(info) };
 	argtbls[tab] = tperm; // save to process body below
@@ -81,6 +82,15 @@ bool iterbdds::permute_bodies(ntable tab, alt& a,
 				permex_add_bit(b.vals, a.vm, p.perm.bm, a.bm);
 			b.ex = pex.first;
 			b.perm = pex.second;
+			// D: should we do body_query here again? everything changed e.g.
+			// fix: this is actually required, some pos/bits ordering just won't
+			// work otherwise
+			//if (b.tlast && b.tlast->b == tbls[b.tab].t->b) {} else 
+			{
+				b.tlast = tbls[b.tab].t;
+				b.rlast = (b.neg ? bdd_and_not_ex_perm : bdd_and_ex_perm)
+					(b.q, tbls[b.tab].t, b.ex, b.perm);
+			}
 		}
 	}
 	return true;
@@ -102,6 +112,7 @@ bool iterbdds::permute_alt(ntable tab, size_t arg, size_t n, alt& a,
 	auto pex = deltail(a.bm, tbls[tab].bm);
 	a.ex = pex.first;
 	a.perm = pex.second;
+	// D: maybe we now need to run alt_query w/ new (eq, rng) & (ex, perm)
 	// a.vm remains the same (it's just indexes, no bits)
 	// also get all other pairs for that arg (other rels)
 	if (has(a.argsdep, arg)) {
