@@ -43,12 +43,11 @@ void unquote(wstring& str) {
 wstring _unquote(wstring str) { unquote(str); return str; }
 
 #ifdef DEBUG
-vbools tables::allsat(spbdd_handle x, size_t args, const bitsmeta& bm) const {
+vbools tables::allsat(spbdd_handle x, size_t, const bitsmeta& bm) const {
 //	const size_t args = siglens[tab];
 	// D: this no longer works, args * bits and (k+1)*bits below, bits too etc.
 	// bits * args => bm.args_bits
 	throw 0;
-	UNUSED(args);
 	vbools v = ::allsat(x, bm.args_bits), s;
 	//for (bools b : v) {
 	//	s.emplace_back(bm.args_bits);
@@ -234,7 +233,7 @@ perminfo tables::add_bit_perm(
 
 /* adds a bit to an existing bdd */
 spbdd_handle tables::add_bit(
-	spbdd_handle h, perminfo& perm, size_t arg, size_t args) {
+	spbdd_handle h, const perminfo& perm, size_t arg, size_t args) {
 	if (h == nullptr) 
 		return h;
 	bdd_handles v = { h ^ perm.perm };
@@ -813,8 +812,10 @@ set<term> tables::decompress() {
 #define get_var_lexeme(v) rdict().get_lexeme(wstring(L"?v") + to_wstring(-v))
 
 elem tables::get_elem(int_t arg, const arg_type& type) const {
-	DBG(assert(type.type != base_type::NONE););
+	//DBG(assert(type.type != base_type::NONE););
+	if (type.type == base_type::NONE) {} //wcout << L"base_type::NONE" << endl;
 	if (arg < 0) return elem(elem::VAR, get_var_lexeme(arg));
+	DBG(assert(type.type != base_type::NONE););
 	switch (type.type) {
 		case base_type::CHR: 
 			{
@@ -1120,7 +1121,7 @@ void tables::get_facts(const flat_prog& m) {
 }
 
 // D: this is no longer valid, there're no 'global' nums, chars, syms, bits
-void tables::get_nums(const raw_term& t) { UNUSED(t); }
+void tables::get_nums(const raw_term&) { }
 
 bool tables::to_pnf( form *&froot) {
 
@@ -1263,6 +1264,8 @@ void create_head(vector<term>&, ntable) {
 
 ntable tables::create_tmp_rel(size_t len) {
 	ntable tab = get_new_tab(dict.get_rel(get_new_rel()), {(int_t)len});
+	// TODO: just some basic init, make it better
+	tbls[tab].bm.init(dict);
 	return tmprels.insert(tab), tab;
 }
 
@@ -1743,6 +1746,9 @@ void tables::load_string(lexeme r, const wstring& s) {
 	// D: we have all for get_table and we now need it before from_fact/from_sym
 	ntable tab1 = get_table({rel, ar});
 	ntable tab2 = get_table({rel, {3}});
+	// TODO: just some basic init, make it better
+	tbls[tab1].bm.init(dict);
+	tbls[tab2].bm.init(dict);
 	for (int_t n = 0; n != (int_t)s.size(); ++n) {
 		// D: from_fact called on a temp term, w no table? do get_table before.
 		// a temp hack (to inject tab), do this properly, separate terms etc.
@@ -1867,7 +1873,12 @@ void tables::transform_grammar(vector<production> g, flat_prog& p) {
 		if (x.p.size() == 2 && x.p[1].e == L"null") {
 			term t;
 			t.resize(2), t[0] = t[1] = -1;
-			t.tab = get_table({dict.get_rel(x.p[0].e),{2}}),
+			t.tab = get_table({dict.get_rel(x.p[0].e),{2}});
+			// TODO: just some basic init, make it better
+			table& tbl = tbls[t.tab];
+			size_t len = t.size(); // tbl.len
+			tbl.bm.init(dict);
+			t.types = tbl.bm.types, t.nums = ints(len, 0);
 			p.insert({move(t)});
 			continue;
 		}
@@ -1877,11 +1888,23 @@ void tables::transform_grammar(vector<production> g, flat_prog& p) {
 				t.tab = get_table({*str_rels.begin(), {3}});
 				t.resize(3), t[0] = dict.get_sym(x.p[n].e),
 				t[1] = -n, t[2] = -n-1;
+				// TODO: just some basic init, make it better
+				table& tbl = tbls[t.tab];
+				size_t len = t.size(); // tbl.len
+				t.types = argtypes(len), t.nums = ints(len, 0);
+				t.types[0] = arg_type{ base_type::STR, 10 }; //bsr(dict.nsyms())
+				tbl.bm.set_args(ints(len), t.types, t.nums);
+				tbl.bm.init(dict);
 			} else if (x.p[n].type == elem::SYM) {
 				t.resize(2);
 				t.tab = get_table({dict.get_rel(x.p[n].e),{2}});
 				if (n) t[0] = -n, t[1] = -n-1;
 				else t[0] = -1, t[1] = -(int_t)(x.p.size());
+				// TODO: just some basic init, make it better
+				table& tbl = tbls[t.tab];
+				size_t len = t.size(); // tbl.len
+				tbl.bm.init(dict);
+				t.types = tbl.bm.types, t.nums = ints(len, 0);
 			} else if (x.p[n].type == elem::CHR) {
 				t.resize(3);
 				if (str_rels.size() > 1) er(err_one_input);
@@ -1889,6 +1912,13 @@ void tables::transform_grammar(vector<production> g, flat_prog& p) {
 				t.tab = *str_rels.begin();
 				t[0] = -n, t[2] = -n-1,
 				t[1] = mkchr((unsigned char)(x.p[n].ch));
+				// TODO: just some basic init, make it better
+				table& tbl = tbls[t.tab];
+				size_t len = t.size(); // tbl.len
+				t.types = argtypes(len), t.nums = ints(len, 0);
+				t.types[1] = arg_type{ base_type::CHR, 10 }; //should be 8
+				tbl.bm.set_args(ints(len), t.types, t.nums);
+				tbl.bm.init(dict);
 			} else throw runtime_error(
 				"Unexpected grammar element");
 			v.push_back(move(t));

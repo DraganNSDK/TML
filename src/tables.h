@@ -268,7 +268,7 @@ private:
 		ints vals, const varmap& vm, c_bitsmeta& bm, c_bitsmeta& altbm);
 	static perminfo add_bit_perm(bitsmeta& bm, size_t arg, size_t args);
 	static spbdd_handle add_bit(
-		spbdd_handle h, perminfo& perm, size_t arg, size_t args);
+		spbdd_handle h, const perminfo& perm, size_t arg, size_t args);
 
 	template<typename T> spbdd_handle leq_const(
 		int_t c, size_t arg, size_t args, const T& altbl) const {

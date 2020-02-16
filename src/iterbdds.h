@@ -52,7 +52,8 @@ struct iterbdds {
 	bool permute_table(ntable tab, size_t arg, 
 		std::map<ntable, bits_perm>& argtbls, size_t bits, base_type type);
 	bool permute_bodies(ntable tab, alt& a, 
-		std::map<ntable, bits_perm>& argtbls, size_t bits, base_type type);
+		std::map<ntable, bits_perm>& argtbls, const bits_perm& altperm,
+		size_t bits, base_type type);
 	bool permute_alt(ntable tab, size_t arg, size_t n, alt& a, 
 		std::map<ntable, bits_perm>& argtbls, size_t bits, base_type type);
 	bool permute_all();

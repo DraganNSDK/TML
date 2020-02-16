@@ -36,7 +36,7 @@ bool iterbdds::permute_table(ntable tab, size_t arg) {
 }
 
 bool iterbdds::permute_table(ntable tab, size_t arg, 
-	std::map<ntable, bits_perm>& argtbls, size_t bits, base_type type) {
+	map<ntable, bits_perm>& argtbls, size_t bits, base_type type) {
 	if (tab == -1) return false; // continue;
 	table& tb = tbls[tab];
 	if (has(tdone, tab)) {
@@ -53,6 +53,7 @@ bool iterbdds::permute_table(ntable tab, size_t arg,
 	tblperms[{tab, arg}] = info;
 	tb.bm = info.bm;
 	tb.t = add_bit(tb.t, info, arg, tb.len);
+	// add/del should be "table's" though not entirely clear (but mixes w/ t)
 	for (spbdd_handle& tadd : tb.add)
 		tadd = add_bit(tadd, info, arg, tb.len);
 	for (spbdd_handle& tdel : tb.del)
@@ -66,7 +67,8 @@ bool iterbdds::permute_table(ntable tab, size_t arg,
 }
 
 bool iterbdds::permute_bodies(ntable tab, alt& a, 
-	std::map<ntable, bits_perm>& argtbls, size_t bits, base_type type) {
+	map<ntable, bits_perm>& argtbls, const bits_perm& altp,
+	size_t bits, base_type type) {
 	for (size_t n = 0; n != a.size(); ++n) {
 		body& b = *a[n];
 		// a.depends is no good here, we need tables per arg
@@ -77,27 +79,34 @@ bool iterbdds::permute_bodies(ntable tab, alt& a,
 			DBG(assert(p.perm.bm.types[p.arg].type == type););
 			b.q = add_bit(b.q, p.perm, p.arg, p.args);
 			b.tlast = add_bit(b.tlast, p.perm, p.arg, p.args);
-			b.rlast = add_bit(b.rlast, p.perm, p.arg, p.args);
+			// this is wrong, rlast is alt-based, not tbl-based
+			//b.rlast = add_bit(b.rlast, p.perm, p.arg, p.args);
+			// this is the right way, using alt perm (or rule's? guess not)
+			b.rlast = add_bit(b.rlast, altp.perm, altp.arg, altp.args);
 			auto pex = 
 				permex_add_bit(b.vals, a.vm, p.perm.bm, a.bm);
 			b.ex = pex.first;
 			b.perm = pex.second;
+			// tlast and rlast need to be in sync, and rlast is wrong, needs alt
+			// this resets next body_query, same as below
+			//b.tlast = nullptr;
+
 			// D: should we do body_query here again? everything changed e.g.
 			// fix: this is actually required, some pos/bits ordering just won't
 			// work otherwise
-			//if (b.tlast && b.tlast->b == tbls[b.tab].t->b) {} else 
-			{
-				b.tlast = tbls[b.tab].t;
-				b.rlast = (b.neg ? bdd_and_not_ex_perm : bdd_and_ex_perm)
-					(b.q, tbls[b.tab].t, b.ex, b.perm);
-			}
+			////if (b.tlast && b.tlast->b == tbls[b.tab].t->b) {} else 
+			//{
+			//	b.tlast = tbls[b.tab].t;
+			//	b.rlast = (b.neg ? bdd_and_not_ex_perm : bdd_and_ex_perm)
+			//		(b.q, tbls[b.tab].t, b.ex, b.perm);
+			//}
 		}
 	}
 	return true;
 }
 
 bool iterbdds::permute_alt(ntable tab, size_t arg, size_t n, alt& a, 
-	std::map<ntable, bits_perm>& argtbls, size_t bits, base_type type) {
+	map<ntable, bits_perm>& argtbls, size_t bits, base_type type) {
 	size_t args = a.bm.get_args(); // a.varslen;
 	DBG(assert(a.bm.types[arg].bitness + 1 == bits););
 	DBG(assert(a.bm.types[arg].type == type););
@@ -106,12 +115,22 @@ bool iterbdds::permute_alt(ntable tab, size_t arg, size_t n, alt& a,
 	a.bm = info.bm;
 	a.eq = add_bit(a.eq, info, arg, args);
 	a.rng = add_bit(a.rng, info, arg, args);
-	a.rlast = add_bit(a.rlast, info, arg, args);
-	for (spbdd_handle& al : a.last)
-		al = add_bit(al, info, arg, args);
+	// this is wrong, should use r.bm stuff, but is almost always reset & works
+	////a.rlast = add_bit(a.rlast, info, arg, args);
+	// this is the right way, we use rule's tbl perm (we should have it by now)
+	// some issue here, need to pass right tbl perm directly, may not have it?
+	////bits_perm& rperm = argtbls.at(tab);
+	////a.rlast = add_bit(a.rlast, rperm.perm, rperm.arg, rperm.args);
+	//for (spbdd_handle& al : a.last)
+	//	al = add_bit(al, info, arg, args);
 	auto pex = deltail(a.bm, tbls[tab].bm);
 	a.ex = pex.first;
 	a.perm = pex.second;
+	// this is to reset and re-query on next step (last is synced w/ rlast)
+	a.last.clear(); // a.rlast = hfalse;
+	// or do this to imitate alt_query
+	//a.rlast = bdd_and_many_ex_perm(a.last, a.ex, a.perm);
+
 	// D: maybe we now need to run alt_query w/ new (eq, rng) & (ex, perm)
 	// a.vm remains the same (it's just indexes, no bits)
 	// also get all other pairs for that arg (other rels)
@@ -121,7 +140,8 @@ bool iterbdds::permute_alt(ntable tab, size_t arg, size_t n, alt& a,
 			permute_table(targ, argtbls, bits, type);
 		}
 	}
-	permute_bodies(tab, a, argtbls, bits, type);
+	bits_perm altperm = { tab, arg, args, move(info) };
+	permute_bodies(tab, a, argtbls, altperm, bits, type);
 	return true;
 }
 

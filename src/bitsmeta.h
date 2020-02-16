@@ -34,48 +34,49 @@ struct bitsmeta {
 	std::map<size_t, std::map<size_t, size_t>> mleftargs;
 
 	bitsmeta() {}
-	bitsmeta(size_t len) : types(len), vargs(len, 0), nterms{0}, args_bits{0} {
+	bitsmeta(size_t len) 
+		: types(len), nums(len), vargs(len, 0), nterms{0}, args_bits{0} {
 		for (size_t i = 0; i != len; ++i) vargs[i] = i; // native ordering
 	}
 	/* sort of a copy .ctor w/ bits changed (for one arg) - supports add_bit */
 	bitsmeta(const bitsmeta& src, size_t arg, size_t bits2add = 1)
 		: bitsmeta(src.types.size()) {
 		DBG(assert(src.types.size() > 0);); // don't call this if empty
-
 		//bm.set_args(ints(src.types.size()), src.types, src.nums);
 		types = src.types;
 		nums = src.nums; // we don't need this, or increase ++nums[arg] too?
 		vargs = src.vargs;
 		++nterms; // set init 'flag'
-
-		//bm.init(dict);
 		// we allow only one bit add at the time (for the moment)
 		DBG(assert(bits2add == 1););
-		size_t lsum = 0, args = types.size(), maxb = 0;
-		mleftbits.clear();
-		mleftbits[vargs[0]] = lsum;
-		++types[arg].bitness; // increase bits...
 		// TODO: check if this makes sense (e.g. if it's CHR it has to be 8)
-		// recalculate everything...
-		for (size_t i = 0; i < args-1; ++i) { // process [0..args-2] (skip last)
-			lsum += types[vargs[i]].bitness;
-			mleftbits[vargs[i+1]] = lsum;
-			maxb = std::max(maxb, types[vargs[i]].bitness);
-		}
-		args_bits = mleftbits.at(vargs[args-1]) + types[vargs[args-1]].bitness;
-		maxbits = std::max(maxb, types[vargs[args-1]].bitness);
-
-		size_t argsum = 0;
-		if (maxbits == 0)
-			return;
-		mleftargs.clear();
-		for (int_t bit = maxbits - 1; bit >= 0; --bit) {
-			std::map<size_t, size_t>& mpos = mleftargs[bit];
-			for (size_t arg = 0; arg != types.size(); ++arg)
-				if (types[vargs[arg]].bitness > size_t(bit))
-					mpos[vargs[arg]] = argsum++;
-		}
-		DBG(assert(argsum == args_bits););
+		++types[arg].bitness; // increase bits...
+		//bm.init(dict);
+		init_cache();
+		//size_t lsum = 0, args = types.size(), maxb = 0;
+		//mleftbits.clear();
+		//mleftbits[vargs[0]] = lsum;
+		////++types[arg].bitness; // increase bits...
+		//// TODO: check if this makes sense (e.g. if CHR it has to be 8)
+		//// recalculate everything...
+		//for (size_t i = 0; i < args-1; ++i) { // [0..args-2] (skip last)
+		//	lsum += types[vargs[i]].bitness;
+		//	mleftbits[vargs[i+1]] = lsum;
+		//	maxb = std::max(maxb, types[vargs[i]].bitness);
+		//}
+		//args_bits = mleftbits.at(vargs[args-1]) + types[vargs[args-1]].bitness;
+		//maxbits = std::max(maxb, types[vargs[args-1]].bitness);
+		//size_t argsum = 0;
+		//if (maxbits == 0)
+		//	return;
+		//mleftargs.clear();
+		//for (int_t bit = maxbits - 1; bit >= 0; --bit) {
+		//	std::map<size_t, size_t>& mpos = mleftargs[bit];
+		//	for (size_t arg = 0; arg != types.size(); ++arg)
+		//		if (types[vargs[arg]].bitness > size_t(bit))
+		//			mpos[vargs[arg]] = argsum++;
+		//}
+		//DBG(assert(argsum == args_bits););
 	}
 
 	int_t get_chars(size_t arg) const // TODO: 256 ? 
@@ -94,6 +95,7 @@ struct bitsmeta {
 	size_t get_bits(size_t arg) const { return types[arg].bitness; }
 	base_type get_type(size_t arg) const { return types[arg].type; }
 
+	void init_cache();
 	void init(const dict_t& dict);
 	void update_types(const argtypes& vtypes, const ints& vnums);
 	bool set_args(const ints& args, const argtypes& vtypes, const ints& vnums);
@@ -133,7 +135,7 @@ struct bitsmeta {
 	//DBG(assert(b < bits););
 	// doubled consts fix: make it again from-left (consts the same as pos)
 	/* this is bit mapping for consts basically */
-	//static inline size_t bit(size_t b, size_t bits) { UNUSED(bits); return b; }
+	//static inline size_t bit(size_t b, size_t) { return b; }
 	static inline size_t bit(size_t b, size_t bits) { return (bits - b - 1); }
 
 	/*

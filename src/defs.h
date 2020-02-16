@@ -101,7 +101,5 @@ struct arg_type {
 
 typedef std::vector<arg_type> argtypes;
 
-#define UNUSED(x) (void)(x)
-
 #endif // __DEFS_H__
 //#define TRANSFORM_BIN_DRIVER

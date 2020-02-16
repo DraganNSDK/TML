@@ -93,6 +93,30 @@ void bitsmeta::init(const dict_t& dict) {
 	DBG(assert(argsum == args_bits););
 }
 
+void bitsmeta::init_cache() {
+	DBG(assert(!types.empty()););
+	size_t args = types.size(), lsum = 0, maxb = 0, argsum = 0;
+	mleftargs.clear();
+	mleftbits.clear();
+	mleftbits[vargs[0]] = lsum;
+	// recalculate everything...
+	for (size_t i = 0; i < args-1; ++i) { // process [0..args-2] (skip last)
+		lsum += types[vargs[i]].bitness;
+		mleftbits[vargs[i+1]] = lsum;
+		maxb = std::max(maxb, types[vargs[i]].bitness);
+	}
+	args_bits = mleftbits.at(vargs[args-1]) + types[vargs[args-1]].bitness;
+	maxbits = std::max(maxb, types[vargs[args-1]].bitness);
+	DBG(assert(maxbits != 0);); // if (maxbits == 0) return;
+	for (int_t bit = maxbits - 1; bit >= 0; --bit) {
+		map<size_t, size_t>& mpos = mleftargs[bit];
+		for (size_t arg = 0; arg != types.size(); ++arg)
+			if (types[vargs[arg]].bitness > size_t(bit))
+				mpos[vargs[arg]] = argsum++;
+	}
+	DBG(assert(argsum == args_bits););
+}
+
 bool bitsmeta::set_args(
 	const ints& args, const argtypes& vtypes, const ints& vnums) {
 	DBG(assert(vtypes.size() > 0);); // don't call this if nothing to do
@@ -135,22 +159,24 @@ not entirely nice but handy to sync types in between tbls, rules, alts, for now
 */
 void bitsmeta::update_types(const argtypes& vtypes, const ints& vnums) {
 	DBG(assert(types.size() <= vtypes.size()););
+	bool changed = false;
 	for (size_t i = 0; i != types.size(); ++i) {
 		arg_type& type = types[i];
 		const arg_type& newtype = vtypes[i];
 		if (newtype.type == base_type::NONE) continue; // not set, skip
 		if (type.type == base_type::NONE)
-			type = newtype; // first init...
+			type = newtype, changed = true; // first init...
 		if (type.type != newtype.type)
 			parse_error(err_type, L""); //lexeme?
-		if (type.type == base_type::INT)
-			nums[i] = max(nums[i], vnums[i]); // no need if NONE but cheap
-		// we may not need this, it's 0 except for alt's (inheriting, once)
+		if (type.type == base_type::INT && vnums[i] > nums[i])
+			nums[i] = vnums[i], changed = true; //nums[i] = max(...);
 		if (newtype.bitness > type.bitness)
-			type.bitness = newtype.bitness;
+			type.bitness = newtype.bitness, changed = true;
 		//if (isset && type.type == base_type::INT) // calc bitness for ints
 		//	type.bitness = BitScanR(un_mknum(args[i]), type.bitness);
 	}
+	// this updates 'live', caches may change
+	if (changed) init_cache();
 }
 
 
