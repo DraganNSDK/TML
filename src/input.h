@@ -14,6 +14,7 @@
 #define __INPUT_H__
 
 #include "defs.h"
+#include "types.h"
 #include "dict.h"
 #include <vector>
 #include <set>
@@ -39,19 +40,27 @@ static const std::set<std::wstring> str_bltins =
 struct elem {
 	enum etype {
 		NONE, SYM, NUM, CHR, VAR, OPENP, CLOSEP, ALT, STR, EQ, NEQ, LEQ, GT, LT,
-		GEQ, BLTIN, NOT, AND, OR, FORALL, EXISTS, UNIQUE, IMPLIES, COIMPLIES, 
+		GEQ, BLTIN, NOT, AND, OR, FORALL, EXISTS, UNIQUE, IMPLIES, COIMPLIES,
 		ALU, ARGTYP
 	} type;
 	t_alu_op alu_op = NOP;
 	int_t num = 0;
 	lexeme e;
 	wchar_t ch;
+	// D: this is temp/hack only to support decompress out to dump more info
+	// TODO: remove it or move to out_term/out_elem instead
+	arg_type bitype{base_type::NONE, size_t(-1)};
 	elem() {}
 	elem(int_t num) : type(NUM), num(num) {}
 	elem(wchar_t ch) : type(CHR), ch(ch) {}
 	elem(etype type, lexeme e) : type(type), e(e) {
 		DBG(assert(type!=NUM&&type!=CHR&&(type!=SYM||(e[0]&&e[1])));)
 	}
+	// this is just temp, this should be the base ctor otherwise
+	elem(int_t num, arg_type type) : elem(num) { bitype = type; }
+	elem(wchar_t ch, arg_type type) : elem(ch) { bitype = type; }
+	elem(etype type, lexeme e, arg_type atype) : elem(type, e) {bitype = atype;}
+
 	etype peek(const lexemes& l, size_t& pos);
 	bool is_paren() const { return type == OPENP || type == CLOSEP; }
 	bool parse(const lexemes& l, size_t& pos);
@@ -216,6 +225,8 @@ struct raw_progs {
 	void parse(const std::wstring& s, dict_t& dict, bool newseq = true);
 };
 
+void warning(cws o, std::wstring e);
+void warning(cws o, std::wstring e, cws s);
 void parse_error(cws o, std::wstring e);
 void parse_error(cws o, std::wstring e, cws s);
 void parse_error(cws o, std::wstring e, lexeme l);

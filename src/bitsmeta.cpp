@@ -15,6 +15,7 @@
 #include "bitsmeta.h"
 #include "dict.h"
 #include "input.h"
+//#include "term.h"
 //#include "output.h"
 #include "err.h"
 using namespace std;
@@ -32,6 +33,7 @@ using namespace std;
 /* prepare bits, bitness, caches if any */
 void bitsmeta::init(const dict_t& dict) {
 	// vargs should be set before entering, or rerun this on ordering change.
+	if (types.empty()) return;
 	mleftbits.clear();
 	size_t lsum = 0, args = types.size(), maxb = 0;
 	mleftbits[vargs[0]] = lsum;
@@ -67,6 +69,7 @@ void bitsmeta::init(const dict_t& dict) {
 				type.bitness += 2; // ...will be removed
 			default: ;
 		}
+		//DBG(assert(type.bitness < 100););
 		// init vbits (temp cache), any other caching if needed
 		//vbits[i] = types[i].bitness;
 
@@ -119,6 +122,7 @@ void bitsmeta::init_cache() {
 
 bool bitsmeta::set_args(
 	const ints& args, const argtypes& vtypes, const ints& vnums) {
+	if (vtypes.empty()) return false;
 	DBG(assert(vtypes.size() > 0);); // don't call this if nothing to do
 	DBG(assert(args.size() == vtypes.size()););
 	DBG(assert(args.size() == vnums.size()););
@@ -147,6 +151,7 @@ bool bitsmeta::set_args(
 			//if (type.type == base_type::INT) nums[i] = vnums[i];
 			//if (isset && type.type == base_type::INT) // calc bitness for ints
 			//	type.bitness = BitScanR(un_mknum(args[i]), type.bitness);
+			//DBG(assert(type.bitness < 100););
 		}
 	}
 	++nterms;
@@ -174,9 +179,104 @@ void bitsmeta::update_types(const argtypes& vtypes, const ints& vnums) {
 			type.bitness = newtype.bitness, changed = true;
 		//if (isset && type.type == base_type::INT) // calc bitness for ints
 		//	type.bitness = BitScanR(un_mknum(args[i]), type.bitness);
+		//DBG(assert(type.bitness < 100););
 	}
 	// this updates 'live', caches may change
 	if (changed) init_cache();
+}
+
+bool bitsmeta::sync_types(
+	arg_type& l, const arg_type& r, int_t& lnum, const int_t& rnum) {
+	bool changed = false;
+	bool lnone = l.type == base_type::NONE, rnone = r.type == base_type::NONE;
+	if (rnone) return false;
+	else if (lnone) return l = r, true;
+	if (l.type != r.type) parse_error(err_type, L"");
+	if (l.type == base_type::INT && rnum > lnum)
+		lnum = rnum, changed = true;
+	if (r.bitness > l.bitness)
+		l.bitness = r.bitness, changed = true;
+	//DBG(assert(l.bitness < 100););
+	//DBG(assert(r.bitness < 100););
+	return changed;
+}
+
+bool bitsmeta::sync_types(arg_type& l, arg_type& r, int_t& lnum, int_t& rnum) {
+	bool lchng, rchng;
+	return sync_types(l, r, lnum, rnum, lchng, rchng);
+}
+bool bitsmeta::sync_types(arg_type& l, arg_type& r, int_t& lnum, int_t& rnum,
+	bool& lchng, bool& rchng) {
+	//bool changed = false;
+	bool lnone = l.type == base_type::NONE, rnone = r.type == base_type::NONE;
+	if (lnone && rnone) return false;
+	else if (rnone) return r = l, rchng = true;
+	else if (lnone) return l = r, lchng = true;
+	if (l.type != r.type) parse_error(err_type, L"");
+	if (l.type == base_type::INT) {
+		if (rnum > lnum) 
+			lnum = rnum, lchng = true;
+		else if (lnum > rnum) 
+			rnum = lnum, rchng = true;
+	}
+	if (r.bitness > l.bitness)
+		l.bitness = r.bitness, lchng = true;
+	else if (l.bitness > r.bitness)
+		r.bitness = l.bitness, rchng = true;
+	//DBG(assert(l.bitness < 100););
+	//DBG(assert(r.bitness < 100););
+	return lchng || rchng;
+}
+
+bool bitsmeta::sync_types(
+	argtypes& ltypes, argtypes& rtypes, ints& lnums, ints& rnums) {
+	bool lchng, rchng;
+	return sync_types(ltypes, rtypes, lnums, rnums, lchng, rchng);
+}
+bool bitsmeta::sync_types(
+	argtypes& ltypes, argtypes& rtypes, ints& lnums, ints& rnums,
+	bool& lchng, bool& rchng) {
+	DBG(assert(ltypes.size() == rtypes.size()););
+	//bool lchng = false, rchng = false;
+	for (size_t i = 0; i != ltypes.size(); ++i)
+		sync_types(ltypes[i], rtypes[i], lnums[i], rnums[i], lchng, rchng);
+	// this updates 'live', caches may change
+	//if (lchng) l.init_cache();
+	//if (rchng) r.init_cache();
+	return lchng || rchng;
+}
+
+bool bitsmeta::sync_types(argtypes& rtypes, ints& rnums) {
+	return sync_types(*this, rtypes, rnums);
+}
+bool bitsmeta::sync_types(bitsmeta& l, argtypes& rtypes, ints& rnums) {
+	bool lchng = false, rchng = false, changed;
+	changed =
+		sync_types(l.types, rtypes, l.nums, rnums, lchng, rchng);
+	if (lchng) l.init_cache();
+	//if (rchng) r.init_cache();
+	return changed; // lchng || rchng;
+}
+
+//bool bitsmeta::sync_types(bitsmeta& l, term& t) {
+//	return sync_types(l, t.types, t.nums);
+//}
+
+bool bitsmeta::sync_types(bitsmeta& l, bitsmeta& r) {
+	bool lchng = false, rchng = false, changed;
+	changed = 
+		sync_types(l.types, r.types, l.nums, r.nums, lchng, rchng);
+	if (lchng) l.init_cache();
+	if (rchng) r.init_cache();
+	return changed; // lchng || rchng;
+	//DBG(assert(l.types.size() == r.types.size()););
+	//bool lchng = false, rchng = false;
+	//for (size_t i = 0; i != l.types.size(); ++i)
+	//	sync_types(l.types[i], r.types[i], l.nums[i], r.nums[i], lchng, rchng);
+	//// this updates 'live', caches may change
+	//if (lchng) l.init_cache();
+	//if (rchng) r.init_cache();
+	//return lchng || rchng;
 }
 
 

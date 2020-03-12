@@ -13,6 +13,7 @@
 #ifndef __TERM_H__
 #define __TERM_H__
 #include "defs.h"
+#include "types.h"
 
 //struct intscmp {
 //	bool operator()(const int_t& l, const int_t& r) const {

@@ -164,6 +164,9 @@ void options::setup() {
 	add_bool(L"run",     L"run program     (enabled by default)");
 	add_bool(L"csv",     L"save result into CSV files");
 	add_bool(L"optimize",L"optimize and show more benchmarks");
+	add_bool(L"autotype",L"automatic prepare types, or off/optimize/manual");
+	add_bool(L"dumptype",L"dump all types for debug purposes");
+	add_bool(L"addbit",  L"test addbit");
 	add(option(option::type::STRING, { L"name", L"n" },
 		[](const option::value& v) {
 			output::set_name(v.get_string());

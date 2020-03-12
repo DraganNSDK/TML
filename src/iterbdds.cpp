@@ -24,33 +24,232 @@ using namespace std;
 #define permex_add_bit rtbls.permex_add_bit
 #define deltail rtbls.deltail
 #define tbls rtbls.tbls
-//#define rules rtbls.rules
-//#define depends rtbls.depends
+#define altsmap rtbls.altsmap
+#define get_root_type rtbls.get_root_type
+#define minvtyps rtbls.minvtyps
+#define tblrules rtbls.tblrules
+#define tblbodies rtbls.tblbodies
+#define rulealts rtbls.rulealts
+#define altrule rtbls.altrule
+#define altordermap rtbls.altordermap
+
+//   if it's a table...
+// - permute the main table/arg, test/save to tblperms (no argtbls)
+// - go through all the tblrules[tab], process rules (just core)
+// - go through all tbl bodies (in all alts, tblbodies), do tbl/arg regardless 
+//   if var/const? we do one perm for each tbl/arg? that also means again going 
+//   through some rules, alts...and we need to have bdone also
+// - rinse and repeat for all tbl-s in the 'related' set (just tbls)
+// - we could have same body affected by multiple tbl/arg combos?
+// - we cover all bodies w this (we have affected tbls i.e. bodies)
+//   that's regardles of alts/bodies relations (via vars etc.)
+// - if body is affected, alt is too - if tbl/arg is var, if const? then we 
+//   could just be processing body w/o alt (and no aperm?). For that to work, 
+//   dont' set last/rlast, just null them and that way we could just do 
+//   tbls/bodies, alts later?
+//   ----------------------------
+//   ...then go through all alts...
+// - don't do argsdep/tables or bodies - we've already done those?
+//   ...or go like this...
+// - first tables, rules
+// - then go through alts, skip tbls, but do some bodies (w a perm)
+// - or do just alts, but cache perms (tbl/arg). if alt/body is affected 
+//   (var)->body/tbl var will be listed here and we'll cover body via tbl, if 
+//   body is via const, alt doesn't matter anyways (different tbl/arg, different 
+//   permute, null it). This is an issue, if use alt perm, we need var 
+//   dependency (arg). Easier is just to null body tlast/rlast or sln is make 
+//   proper alt perm, i.e. if alt is 'involved', then gather/use all alt's args 
+//   permuted, and apply one final perm. if alt has no perms involved, then just 
+//   make an identity perm! so body if affected will be permuted via tbl/arg-s 
+//   (could be more than once, multiple args, each adds its perm)
+// - to sum it up, if body is affected, it's here in the set/args.
+// - each body change/perm is listed in one of tbl/arg-s here
+//   (or we don't care, just check algo to have here all tbl/arg-s)
+// - so go through all tbls and tbl/arg-s, perm tbls, construct end tbl perm (by
+//   joining multiple perms for all args affected?) or if we hate that, then 
+//   just cache perms, map all body args.
+// - cache all (per tbl/arg, and use just tblperms, not argtbls).
+// - we could have multiple args for one tbl, so multi-perm
+//   just apply one by one, on tbl, or bodies (or ctor result perm?)
+// - then go through alts, do core alt stuff, 
+// - construct alt's final perm (if multiple args involved) for body
+// - or just null bodies (rlast/tlast), as it's mucho easier
+// - don't do anything else in alts, no tbls, no bodies
+// - but cache alt's perms, to use later for bodies, unless anulling
+// - then go through bodies as affected (by tbl/arg), one by one,
+// - find tbl/arg-s final perm (cached) or apply one by one perm/arg
+//   (that's for body bdd-s, not tlast/rlast)
+// - find alt's perm if exists, use that for rlast/tlast
+// - or if none, then ctor one identity alt perm, use that
+// - or simply just null tlast and that's it
+// - recheck if we need to consider bodies w/ consts affected, but I don't see 
+//   why not, bdd-s change? so we need to perm, may be unnecessary at worst(?)
+// - to loop bodies, a) use tbl/args one by one, tblbodies for each apply each 
+//   tbl/arg perm
+// - or b) easier I think is to gather all args per tbl, do at once
+// - keep track of all done, tbls, rules, alts, bodies 
+// - cache tables, alts perms (nothing else?)
+// - then go through all tbls' all bodies' to cover any noncovered
+// - or we've just done alts, go through all bodies now, 
+//   use alts' perms if available (from cache), if not just null it.
+
+void iterbdds::permute_type(const tbl_arg& intype) {
+	tbl_arg type = get_root_type(intype);
+	auto& bm = tbls[type.tab].bm;
+	size_t bits = bm.types[type.arg].bitness + 1;
+	base_type bitype = bm.types[type.arg].type;
+	if (type != intype) {
+	}
+	//DBG(assert(has(minvtyps, type)););
+	set<alt_arg>& types = minvtyps[type];
+	DBG(assert(has(types, alt_arg{type}));); // make sure we have 'self'
+	//DBG(assert(has(types, alt_arg{ type }));); // make sure self is first?
+	// make sure we have the in type as well (it should be under the root type)
+	DBG(assert(type == intype || has(types, alt_arg{intype})););
+	// first, process all tables, prepare tbls cache...
+	for (const alt_arg& atype : types) {
+		if (atype.alt != -1) continue;
+		ntable tab = atype.tab;
+		size_t arg = atype.arg;
+		tbl_arg targ{tab, arg}; //  = {tab, arg};
+		//auto& tblbm = tbls[tab].bm;
+		DBG(assert(arg < tbls[tab].bm.get_args()););
+		permute_table({tab, arg}, bits, bitype);
+		perminfo& info = tblargperms[{tab, arg}];
+		//table& tb = tbls[tab];
+		size_t len = info.bm.get_args();
+		bits_perm perm{ tab, arg, len, info }; // tb.len
+		for (size_t i : tblrules[tab]) {
+			rule& r = rtbls.rules[i];
+			// if rule/arg is already done skip it
+			//if (has(rdone, tbl_arg{ tab, arg })) continue;
+			DBG(assert(arg < r.t.size()););
+			//int_t var = r.t[arg];
+			//if (var >= 0) continue; // this should invalidate all alt-s too?
+			if (has(rdone, targ)) 
+				continue;
+			rdone.insert(targ);
+			r.eq = add_bit(r.eq, perm.perm, arg, perm.args);
+			r.rlast = add_bit(r.rlast, perm.perm, arg, perm.args);
+			r.h = add_bit(r.h, perm.perm, arg, perm.args);
+			for (spbdd_handle& rl : r.last)
+				rl = add_bit(rl, perm.perm, arg, perm.args);
+			//r.eq = add_bit(r.eq, info, arg, len);
+			//r.rlast = add_bit(r.rlast, info, arg, len);
+			//for (spbdd_handle& rl : r.last)
+			//	rl = add_bit(rl, info, arg, len);
+		}
+	}
+	// now process alts...
+	for (const alt_arg& atype : types) {
+		if (atype.alt == -1) continue;
+		ntable tab = atype.tab;
+		size_t arg = atype.arg;
+		tbl_arg targ{ tab, arg };
+		auto it = altordermap.find({ atype.tab, size_t(atype.alt) });
+		DBG(assert(it != altordermap.end()););
+		tbl_alt altkey = it->second; //altkey{ atype.tab, size_t(atype.alt) };
+		alt_arg altype = { altkey.tab, int_t(altkey.arg), atype.arg };
+		if (has(altperms, altype)) // atype
+			continue;
+		//wcout << L"processing alt: \t" << altype << endl;
+		DBG(assert(has(altsmap, altkey)););
+		alt& a = *altsmap[altkey];
+		map<pair<alt*, size_t>, alt_arg>::const_iterator ait = 
+			altdone.find({ altsmap[altkey], arg });
+		if (ait != altdone.end()) {
+			//wcout << L"found alt: \t" << ait->second << endl;
+			continue;
+		}
+		altdone.insert({ { altsmap[altkey], arg }, altype });
+		if (a.bm.types.empty())
+			continue; // shouldn't happen?
+		DBG(assert(atype.arg < a.bm.get_args()););
+
+		size_t args = a.bm.get_args(); // a.varslen;
+		DBG(assert(a.bm.types[arg].bitness + 1 == bits););
+		DBG(assert(a.bm.types[arg].type == bitype););
+		perminfo info = add_bit_perm(a.bm, arg, args);
+		altperms[altype] = info; // atype
+		a.bm = info.bm;
+		a.eq = add_bit(a.eq, info, arg, args);
+		a.rng = add_bit(a.rng, info, arg, args);
+		// this is the right way, we use rule's tbl perm (we should have it by now)
+		// some issue here, need to pass right tbl perm directly, may not have it?
+		////bits_perm& rperm = argtbls.at(tab);
+		////a.rlast = add_bit(a.rlast, rperm.perm, rperm.arg, rperm.args);
+		//for (spbdd_handle& al : a.last)
+		//	al = add_bit(al, info, arg, args);
+		auto pex = deltail(a.bm, tbls[tab].bm);
+		a.ex = pex.first;
+		a.perm = pex.second;
+		// this is to reset and re-query on next step (last is synced w/ rlast)
+		a.last.clear(); // a.rlast = hfalse;
+		// or do this to imitate alt_query
+		//a.rlast = bdd_and_many_ex_perm(a.last, a.ex, a.perm);
+	}
+	// now go through bodies as we need all tbls and alts to be done (bms/perms)
+	for (const alt_arg& atype : types) {
+		if (atype.alt != -1) continue;
+		ntable tab = atype.tab;
+		size_t arg = atype.arg;
+		tbl_arg targ{ tab, arg };
+		//wcout << L"processing alt (bodies): \t" << atype << endl;
+		DBG(assert(arg < tbls[tab].bm.get_args()););
+		DBG(assert(has(tblargperms, targ)););
+		perminfo& info = tblargperms[{tab, arg}];
+		size_t len = info.bm.get_args();
+		bits_perm perm{ tab, arg, len, info }; // tb.len
+		if (!has(tblbodies, tab)) 
+			continue;
+		for (const tbl_alt& talt : tblbodies[tab]) {
+			//wcout << L"processing body: \t" << talt << endl;
+			alt* palt = get_alt(talt); // alt& a = *get_alt(talt);
+			auto it = bodydone.find({ targ, palt });
+			if (it != bodydone.end()) {
+				//wcout << L"found body: \t" << it->first << L"," << talt << endl;
+				continue;
+			}
+			bodydone.insert({ targ, palt }); // altdone
+			permute_bodies(targ, perm, *palt, bits, bitype);
+		}
+	}
+
+}
+
+alt* iterbdds::get_alt(const tbl_alt& talt) const {
+	auto it = altordermap.find(talt);
+	DBG(assert(it != altordermap.end()););
+	DBG(assert(has(altsmap, it->second)););
+	return altsmap[it->second];
+}
 
 bool iterbdds::permute_table(ntable tab, size_t arg) {
-	map<ntable, bits_perm> argtbls;
 	table& tb = tbls[tab];
 	size_t bits = tb.bm.types[arg].bitness + 1;
 	base_type type = tb.bm.types[arg].type;
-	return permute_table(tab, arg, argtbls, bits, type);
+	return permute_table({ tab, arg }, bits, type);
 }
 
-bool iterbdds::permute_table(ntable tab, size_t arg, 
-	map<ntable, bits_perm>& argtbls, size_t bits, base_type type) {
+bool iterbdds::permute_table(const tbl_arg& targ, size_t bits, base_type type) {
+	ntable tab = targ.tab;
+	size_t arg = targ.arg;
 	if (tab == -1) return false; // continue;
-	table& tb = tbls[tab];
-	if (has(tdone, tab)) {
-		perminfo& rinfo = tblperms[{tab, arg}];
-		argtbls[tab] = { tab, arg, tb.len, rinfo };
+	//if (has(tdone, targ)) return false;
+	if (has(tblargperms, targ)) { //if (has(tdone, targ)) {
+		//perminfo& rinfo = tblargperms[targ]; // [{tab, arg}];
+		//argtbls[tab] = { tab, arg, tb.len, rinfo };
 		return false; // continue;
 	}
+	table& tb = tbls[tab];
 	//size_t args = tb.len; // .bm.get_args();
 	DBG(assert(tb.bm.types[arg].bitness + 1 == bits););
 	DBG(assert(tb.bm.types[arg].type == type););
 
 	perminfo info = add_bit_perm(tb.bm, arg, tb.len);
 	DBG(assert(info.bm.get_args() == tb.len););
-	tblperms[{tab, arg}] = info;
+	tblargperms[targ] = info; // {tab, arg}
+	//tdone.insert(targ);
 	tb.bm = info.bm;
 	tb.t = add_bit(tb.t, info, arg, tb.len);
 	// add/del should be "table's" though not entirely clear (but mixes w/ t)
@@ -60,33 +259,65 @@ bool iterbdds::permute_table(ntable tab, size_t arg,
 		tdel = add_bit(tdel, info, arg, tb.len);
 	// D: not sure if add/del is enough? maybe run the full rule alt_query loop?
 	// stack to do all its dependencies (including rule)
-	bits_perm tperm = { tab, arg, tb.len, move(info) };
-	argtbls[tab] = tperm; // save to process body below
-	vperms.push_back(tperm);
+	//bits_perm tperm{ tab, arg, tb.len, info }; // move(info)
+	//argtbls[tab] = tperm; // save to process body below
+	//vperms.push_back(tperm);
 	return true;
 }
 
-bool iterbdds::permute_bodies(ntable tab, alt& a, 
-	map<ntable, bits_perm>& argtbls, const bits_perm& altp,
-	size_t bits, base_type type) {
+// const bits_perm& altp, 
+bool iterbdds::permute_bodies(const tbl_arg& targ, const bits_perm& p, alt& a, 
+	size_t bits, base_type type)
+{
+	ntable tab = targ.tab;
+	size_t arg = targ.arg;
 	for (size_t n = 0; n != a.size(); ++n) {
+		DBG(assert(a[n] != nullptr););
 		body& b = *a[n];
-		// a.depends is no good here, we need tables per arg
-		if (b.tab == tab || has(argtbls, b.tab)) {
-			bits_perm& p = argtbls[b.tab];
+		if (b.tab == tab) {
+			//wcout << L"processing body: \t" << targ << L"," << b.vals << endl;
 			// permute body bdd-s (eq, last...)
 			DBG(assert(p.perm.bm.get_bits(p.arg) == bits););
 			DBG(assert(p.perm.bm.types[p.arg].type == type););
+
+			// the perm bm is 'stale', contains only data valid per single perm.
+			// - we need to perform addbit on single perm at the time (b by bit)
+			// - but permex structs need to be calced for all perms/changes.
+			// - thus, keep bit-by-bit perms to addbit, & final tbl bm to permex
+			// ...or alternative, calc final 'addbits' and perms, do at once
+			//const bitsmeta& tblbm = p.perm.bm;
+			const bitsmeta& tblbm = tbls[p.tab].bm; // the latest bm for permex
+			#ifdef DEBUG
+			//size_t args = tblbm.get_args();
+			//for (size_t n = 0; n != args; ++n) {
+			//	DBG(assert((b.vals[n] < 0) == (b.poss[n] >= 0));); // warning
+			//	if (b.vals[n] < 0)
+			//		DBG(assert(size_t(b.poss[n]) == a.vm[b.vals[n]]););
+			//	//if (b.vals[n] < 0) //if (has(a.vm, b.vals[n]))
+			//	//	DBG(assert(
+			//	//	tblbm.get_bits(n)==a.bm.get_bits(a.vm[b.vals[n]])););
+			//}
+			#endif
+
+			// Q: seems that bdd ^ perm ^ perm ... doesn't change anything, t/f?
+			// i.e. that it's safe to apply this multiple times for same b/t/arg
 			b.q = add_bit(b.q, p.perm, p.arg, p.args);
-			b.tlast = add_bit(b.tlast, p.perm, p.arg, p.args);
-			// this is wrong, rlast is alt-based, not tbl-based
-			//b.rlast = add_bit(b.rlast, p.perm, p.arg, p.args);
-			// this is the right way, using alt perm (or rule's? guess not)
-			b.rlast = add_bit(b.rlast, altp.perm, altp.arg, altp.args);
+
+			b.tlast = nullptr;
+			//continue;
+			// this won't be right till the last permute (if body has multiple)
+			// TODO: make one superimposed final permute w/ all tbl permutes
 			auto pex = 
-				permex_add_bit(b.vals, a.vm, p.perm.bm, a.bm);
+				permex_add_bit(b.poss, tblbm, a.bm);
+				//permex_add_bit(b.vals, a.vm, tblbm, a.bm);
+				//permex_add_bit(b.vals, a.vm, p.perm.bm, a.bm);
 			b.ex = pex.first;
 			b.perm = pex.second;
+
+			// TODO: make the final alt permute & we can do this, otherwise null
+			//b.tlast = add_bit(b.tlast, p.perm, p.arg, p.args);
+			//// rlast is alt-based, not tbl-based, the right way, using alt perm
+			//b.rlast = add_bit(b.rlast, altp.perm, altp.arg, altp.args);
 			// tlast and rlast need to be in sync, and rlast is wrong, needs alt
 			// this resets next body_query, same as below
 			//b.tlast = nullptr;
@@ -94,227 +325,13 @@ bool iterbdds::permute_bodies(ntable tab, alt& a,
 			// D: should we do body_query here again? everything changed e.g.
 			// fix: this is actually required, some pos/bits ordering just won't
 			// work otherwise
-			////if (b.tlast && b.tlast->b == tbls[b.tab].t->b) {} else 
-			//{
-			//	b.tlast = tbls[b.tab].t;
-			//	b.rlast = (b.neg ? bdd_and_not_ex_perm : bdd_and_ex_perm)
-			//		(b.q, tbls[b.tab].t, b.ex, b.perm);
-			//}
-		}
-	}
-	return true;
-}
-
-bool iterbdds::permute_alt(ntable tab, size_t arg, size_t n, alt& a, 
-	map<ntable, bits_perm>& argtbls, size_t bits, base_type type) {
-	size_t args = a.bm.get_args(); // a.varslen;
-	DBG(assert(a.bm.types[arg].bitness + 1 == bits););
-	DBG(assert(a.bm.types[arg].type == type););
-	perminfo info = add_bit_perm(a.bm, arg, args);
-	altperms[{tab, arg, n}] = info;
-	a.bm = info.bm;
-	a.eq = add_bit(a.eq, info, arg, args);
-	a.rng = add_bit(a.rng, info, arg, args);
-	// this is wrong, should use r.bm stuff, but is almost always reset & works
-	////a.rlast = add_bit(a.rlast, info, arg, args);
-	// this is the right way, we use rule's tbl perm (we should have it by now)
-	// some issue here, need to pass right tbl perm directly, may not have it?
-	////bits_perm& rperm = argtbls.at(tab);
-	////a.rlast = add_bit(a.rlast, rperm.perm, rperm.arg, rperm.args);
-	//for (spbdd_handle& al : a.last)
-	//	al = add_bit(al, info, arg, args);
-	auto pex = deltail(a.bm, tbls[tab].bm);
-	a.ex = pex.first;
-	a.perm = pex.second;
-	// this is to reset and re-query on next step (last is synced w/ rlast)
-	a.last.clear(); // a.rlast = hfalse;
-	// or do this to imitate alt_query
-	//a.rlast = bdd_and_many_ex_perm(a.last, a.ex, a.perm);
-
-	// D: maybe we now need to run alt_query w/ new (eq, rng) & (ex, perm)
-	// a.vm remains the same (it's just indexes, no bits)
-	// also get all other pairs for that arg (other rels)
-	if (has(a.argsdep, arg)) {
-		// iter over each table and add bit in bm, update tbl
-		for (pair<ntable, size_t>& targ : a.argsdep[arg]) {
-			permute_table(targ, argtbls, bits, type);
-		}
-	}
-	bits_perm altperm = { tab, arg, args, move(info) };
-	permute_bodies(tab, a, argtbls, altperm, bits, type);
-	return true;
-}
-
-// vector<bits_perm>& vperms, map<pair<ntable, size_t>, perminfo>& tblperms
-bool iterbdds::permute_all() {
-	//int_t ipop = vperms.size()-1; ipop >= 0; bits_perm& perm=vperms[ipop--];
-	//set<ntable> tdone;
-	//set<tuple<ntable, size_t>> rdone;
-	//set<tuple<ntable, size_t, size_t>> altdone;
-	////map<pair<ntable, size_t>, perminfo> tblperms;
-	//map<tuple<ntable, size_t, size_t>, perminfo> altperms;
-	size_t bits = 0;
-	while (!vperms.empty()) {
-		bits_perm perm = move(vperms.back()); 
-		vperms.pop_back(); // optimize later
-		if (has(tdone, perm.tab)) 
-			continue; // shouldn't happen though?
-		tdone.insert(perm.tab); // process a table at most once
-		DBG(assert(bits == 0 || bits == perm.perm.bm.types[perm.arg].bitness););
-		bits = perm.perm.bm.types[perm.arg].bitness;
-		base_type type = perm.perm.bm.types[perm.arg].type;
-		// D: this is brute force, un-optimized, we make too many passes
-		for (rule& r : rtbls.rules) {
-			//set<ntable>& dpnds = depends[perm.tab];
-			if (r.tab == perm.tab) { 
-				ntable tab = perm.tab; // r.tab;
-				size_t arg = perm.arg;
-				// look for other rel/tbls we depend on + permute all rule bdds
-				DBG(assert(r.t.size() > arg););
-				int_t var = r.t[arg];
-				if (var >= 0) continue; // this invalidates all alt-s as well
-				tuple<ntable, size_t> tblargid = { tab, arg };
-				if (has(rdone, tblargid))
-					continue;
-				rdone.insert(tblargid);
-				// perm all r bdd-s (eq, last)...
-				// what should bm be for rule? use table's?
-				// use table stuff, we just need full perm info, perm uints too.
-				r.eq = add_bit(r.eq, perm.perm, arg, perm.args);
-				r.rlast = add_bit(r.rlast, perm.perm, arg, perm.args);
-				r.h = add_bit(r.h, perm.perm, arg, perm.args);
-				for(spbdd_handle& rl : r.last)
-					rl = add_bit(rl, perm.perm, arg, perm.args);
-				for (size_t n = 0; n != r.size(); ++n) {
-					alt& a = *r[n];
-					map<ntable, bits_perm> argtbls;
-					argtbls[tab] = perm;
-					// perm all alt bdd-s eq, last, rng, we don't care about vm
-					permute_alt(tab, arg, n, a, argtbls, bits, type);
-					// D: what about EQ etc.? (non relations, w/ no tbl behind)
-				}
-			} else if (has(rtbls.depends[r.tab], perm.tab)) {
-				ntable tab = r.tab;
-				//size_t arg = perm.arg;
-				// look for rules/tbls we depend on...
-				int_t rulearg = -1; // numeric_limits<size_t>::max();
-				for (size_t n = 0; n != r.size(); ++n) {
-					alt& a = *r[n];
-					if (!has(a.depends, perm.tab)) continue;
-					pair<ntable, size_t> tblarg = { perm.tab, perm.arg };
-					if (!has(a.invargsdep, tblarg)) continue; // ?
-					vector<size_t>& vinv = a.invargsdep[tblarg];
-					// add_bit for each arg in the vector (normally one)
-					//DBG(assert(vinv.size() == 1););
-					size_t arg, nargs = 0; // = vinv[0]; 
-					// process as if just one // TODO
-					for (size_t anarg : vinv)
-						if (anarg < r.len) { arg = anarg; ++nargs; }
-					DBG(assert(nargs <= 1););
-					if (nargs == 0) arg = vinv[0]; // only temp vars, take any
-					//DBG(assert(r.t[arg] < 0);); // dependencies are w/ vars
-					map<ntable, bits_perm> argtbls;
-					DBG(assert(rulearg == -1 || nargs == 0 || 
-						size_t(rulearg) == arg););
-					tuple<ntable, size_t> tblargid = { tab, arg };
-					if (rulearg == -1 && has(rdone, tblargid))
-						continue;
-					// we should cache this info w/ rule, to do this first, tbl.
-					if (rulearg == -1 && nargs != 0) { // only if rule vars
-						rdone.insert(tblargid);
-						rulearg = arg;
-						DBG(assert(arg < r.t.size()););
-						int_t var = r.t[rulearg];
-						DBG(assert(var < 0);); // dependencies are only w/ vars
-
-						if (permute_table(tab, arg, argtbls, bits, type)) {
-							perminfo& info = vperms.back().perm;
-							size_t len = info.bm.get_args();
-							r.eq = add_bit(r.eq, info, arg, len);
-							r.rlast = add_bit(r.rlast, info, arg, len);
-							for (spbdd_handle& rl : r.last)
-								rl = add_bit(rl, info, arg, len);
-						} else {
-							continue; // ? we should just go on to alt stuff
-						}
-					}
-					DBG(assert(a.inv[arg] < 0););
-					// permute all related bdd-s
-
-					permute_alt(tab, arg, n, a, argtbls, bits, type);
-				}
+			//if (b.tlast && b.tlast->b == tbls[b.tab].t->b) {} else 
+			{
+				b.tlast = tbls[b.tab].t;
+				b.rlast = (b.neg ? bdd_and_not_ex_perm : bdd_and_ex_perm)
+					(b.q, tbls[b.tab].t, b.ex, b.perm);
 			}
 		}
 	}
 	return true;
 }
-
-/* add a bit to an arg (as it's varbit now) */
-//bits_perm tables::add_bit(ntable tab, size_t arg) {
-//	table& tbl = tbls[tab];
-//	spbdd_handle x = tbl.t;
-//	size_t args = tbl.len;
-//
-//	// - make new bm (just for this arg-s bits+1)
-//	// - then init new bits to '0' (bdd wise)
-//	// ...and I guess important is the bits layout (bits-1st, args-1st, varying)
-//	// perm is different now, sum of variable bits per each arg (like leftbits)
-//	perminfo perm = add_bit_perm(tbl.bm, arg, args);
-//
-//	//bitsmeta newbm(tbl.bm, arg, 1); // make new bm, increment arg's bits
-//	//uints perm = perm_init(tbl.bm.args_bits); // tbl.bm.perm_init(); 
-//	//// map from old to new pos, affects all args, for the arg shift bits by 1, 
-//	//// free up 0 bit, for others it's the same bit<->bit (pos may still change)
-//	//// (bits+1) is handled internally by newbm.pos (it 'knows' each arg's bits)
-//	//for (size_t n = 0; n != args; ++n)
-//	//	for (size_t b = 0; b != tbl.bm.types[n].bitness; ++b)
-//	//		if (n==arg) perm[tbl.bm.pos(b, n, args)] = newbm.pos(b+1, n, args);
-//	//		else		perm[tbl.bm.pos(b, n, args)] = newbm.pos(b, n, args);
-//
-//	// D: this permutes/reorders previous bdd bits to new bits 
-//	// we shift to left, as it's counted from right, leaving the top/0 bit free
-//	// args-first and fixed pos/bits did make this easy to do, to keep in mind
-//	bdd_handles v = { x ^ perm.perm };
-//
-//	// 'zero-out' just for the arg (other args didn't shift)
-//	v.push_back(::from_bit(perm.bm.pos(0, arg, args), false));
-//	tbl.t = bdd_and_many(move(v));
-//	//bitsmeta& oldbm = tbl.bm;
-//	tbl.bm = perm.bm;
-//	return {tab, arg, args, move(perm)};
-//
-//	// D: add_bit adds 'zeros' for the last bit (all args), on universe change.
-//	// this is problematic bits/pos wise, at a first glance what bm to use? 
-//	// we don't know bits yet, as we add new bits, bits/size changes, but we're 
-//	// relying on the bdd, bits ordering to stay the same i.e.=> args-first!!
-//	// it gets even more complicated, we don't know the arg type / arg bitness?
-//	//for (size_t n = 0; n != args; ++n)
-//	//	v.push_back(::from_bit(pos(0, bits + 1, n, args), false));
-//	//return tbl.t = bdd_and_many(move(v));
-//}
-
-//ntable tab = r.tab;
-//table& tb = tbls[tab];
-//if (!has(tdone, tab)) {
-//	DBG(assert(tb.bm.types[arg].bitness + 1 == bits););
-//	DBG(assert(tb.bm.types[arg].type == type););
-//	perminfo info = add_bit_perm(tb.bm, arg, tb.len);
-//	tblperms[{tab, arg}] = info;
-//	tb.bm = info.bm;
-//	tb.t = add_bit(tb.t, info, arg, tb.len);
-//	for (spbdd_handle& tadd : tb.add)
-//		tadd = add_bit(tadd, info, arg, tb.len);
-//	for (spbdd_handle& tdel : tb.del)
-//		tdel = add_bit(tdel, info, arg, tb.len);
-//	r.eq = add_bit(r.eq, info, arg, tb.len);
-//	r.rlast = add_bit(r.rlast, info, arg, tb.len);
-//	for (spbdd_handle& rl : r.last)
-//		rl = add_bit(rl, info, arg, tb.len);
-//	bits_perm tperm = { tab, arg, tb.len, move(info) };
-//	argtbls[tab] = tperm; // save to process below
-//	vperms.push_back(tperm);
-//} else {
-//	perminfo& rinfo = tblperms[{tab, arg}];
-//	argtbls[tab] = { tab, arg, tb.len, rinfo };
-//	continue;
-//}

@@ -24,6 +24,7 @@ set(TML_HEADERS
 	err.h
 	input.h
 	iterbdds.h
+	types.h
 	options.h
 	output.h
 	repl.h
@@ -40,6 +41,7 @@ set(TML_SOURCES
 	driver.cpp
 	input.cpp
 	iterbdds.cpp
+	types.cpp
 	options.cpp
 	output.cpp
 	print_prolog.cpp

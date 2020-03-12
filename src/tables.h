@@ -24,6 +24,7 @@
 #include "term.h"
 #include "bitsmeta.h"
 #include "iterbdds.h"
+//#include "iterbdds_slow.h"
 #include "dict.h"
 typedef int_t rel_t;
 struct raw_term;
@@ -36,9 +37,11 @@ class tables;
 
 typedef std::pair<rel_t, ints> sig;
 typedef std::map<int_t, size_t> varmap;
+//typedef std::map<size_t, size_t> posmap;
 typedef std::map<int_t, int_t> env;
 typedef bdd_handles level;
 typedef std::set<std::vector<term>> flat_prog;
+typedef std::pair<bools, uints> permex;
 
 std::wostream& operator<<(std::wostream& os, const env& e);
 
@@ -72,7 +75,7 @@ struct body {
 	spbdd_handle q, tlast, rlast;
 	// TODO: to reinit get_perm on add_bit (well in the pfp/fwd), temp fix only.
 	// (not sure how else to consistently perm from old bits perm to new one?)
-	ints vals; 
+	ints poss;
 //	static std::set<body*, ptrcmp<body>> &s;
 	bool operator<(const body& t) const {
 		if (q != t.q) return q < t.q;
@@ -80,11 +83,15 @@ struct body {
 		if (ext != t.ext) return ext;
 		if (tab != t.tab) return tab < t.tab;
 		if (ex != t.ex) return ex < t.ex;
-		return perm < t.perm;
+		if (perm != t.perm) return perm < t.perm; // return perm < t.perm;
+		return poss < t.poss;
 	}
 };
 
 struct table;
+
+// TODO: make a proper move ctor for this, as alt is 'heavy' now, bm and all.
+
 struct alt : public std::vector<body*> {
 	spbdd_handle rng = htrue, eq = htrue, rlast = hfalse;
 	size_t varslen;
@@ -100,18 +107,28 @@ struct alt : public std::vector<body*> {
 	ints bltinargs;
 	size_t bltinsize;
 	bitsmeta bm;
-	// tracks argument dependencies across the rules, tables
-	std::map<size_t, std::vector<std::pair<ntable,size_t>>> argsdep;
-	// we could (rarely) have multiple bodies of same tbl using different vars
-	std::map<std::pair<ntable, size_t>, std::vector<size_t>> invargsdep;
-	std::set<ntable> depends;
+	std::set<ntable> bodytbls; // map all b-s in alt, even if just consts
 	bool operator<(const alt& t) const {
 		if (varslen != t.varslen) return varslen < t.varslen;
 		if (rng != t.rng) return rng < t.rng;
 		if (eq != t.eq) return eq < t.eq;
 		return (std::vector<body*>)*this<(std::vector<body*>)t;
 	}
+	//// tracks argument dependencies across the rules, tables
+	//std::map<size_t, std::vector<tbl_arg>> argsdep;
+	//// we could (rarely) have multiple bodies of same tbl using different vars
+	//std::map<tbl_arg, std::vector<size_t>> invargsdep;
+	//std::set<ntable> depends;
 };
+
+struct altpaircmp {
+	bool operator()(
+		const std::pair<alt, size_t>& x, const std::pair<alt, size_t>& y) const
+	{
+		return x.first < y.first;
+	}
+};
+typedef std::set<std::pair<alt, size_t>, altpaircmp> alt_set;
 
 struct rule : public std::vector<alt*> {
 	bool neg;
@@ -158,6 +175,7 @@ struct form;
 
 class tables {
 	friend struct iterbdds;
+	//friend struct iterbdds_slow;
 	friend std::ostream& operator<<(std::ostream& os, const tables& tbl);
 	friend std::istream& operator>>(std::istream& is, tables& tbl);
 public:
@@ -166,6 +184,54 @@ private:
 	typedef std::function<void(const term&)> cb_decompress;
 	std::set<body*, ptrcmp<body>> bodies;
 	std::set<alt*, ptrcmp<alt>> alts;
+
+	nlevel nstep = 0;
+	std::vector<table> tbls;
+	std::set<ntable> tmprels;
+	std::map<sig, ntable> smap;
+	std::vector<rule> rules;
+	std::vector<level> levels;
+	std::map<ntable, std::set<ntable>> deps;
+	std::map<ntable, std::set<tbl_alt>> tblbodies;
+	std::map<ntable, std::set<term>> mhits;
+	// D: Q: similar to deps but this is just immediate rule(tbl) dependency?
+	//std::map<ntable, std::set<ntable>> depends;
+	//std::map<ntable, std::set<ntable>> bodytbls;
+
+	std::map<tbl_arg, std::set<alt_arg>> minvtyps;
+	std::map<alt_arg, tbl_arg> mtyps;
+	//std::map<tbl_arg, bitsmeta*> maltbits;
+	// this is is auto typed info for pre-processing 
+	std::map<tbl_alt, alt> altstyped;
+
+	// this is the real alts type info, used for post-processing e.g. addbit
+	std::map<tbl_alt, alt*> altsmap;
+	// maps tbl to rules
+	std::map<ntable, std::set<size_t>> tblrules;
+	// maps types (pre) ordering to (post) rules ordering (sorting is different)
+	std::map<tbl_alt, tbl_alt> altordermap;
+	//// maps alt to a vector pos in 'rules'
+	//std::map<tbl_alt, size_t> altrule; 
+	//// maps a vector pos in 'rules' w alts (tbl_arg could be size_t also)
+	//std::vector<std::vector<tbl_alt>> rulealts;
+
+	//int_t syms = 0, nums = 0, chars = 0;
+	//size_t bits = 2;
+	dict_t dict; // dict_t& dict;
+	bool bproof, datalog, optimize, unsat = false, bcqc = true,
+		bin_transform = false, print_transformed, autotype = true, dumptype,
+		testaddbit;
+
+	size_t max_args = 0;
+	std::map<std::array<int_t, 6>, spbdd_handle> range_memo;
+
+	//	std::map<ntable, std::set<spbdd_handle>> goals;
+	std::set<term> goals;
+	std::set<ntable> to_drop;
+	std::set<ntable> exts; // extensional
+	strs_t strs;
+	std::set<int_t> str_rels;
+	//	std::function<int_t(void)>* get_new_rel;
 
 	struct witness {
 		size_t rl, al;
@@ -200,20 +266,11 @@ private:
 		const std::set<term>& b) const;
 	std::wostream& print(std::wostream& os, const flat_prog& p) const;
 
-	nlevel nstep = 0;
-	std::vector<table> tbls;
-	std::set<ntable> tmprels;
-	std::map<sig, ntable> smap;
-	std::vector<rule> rules;
-	std::vector<level> levels;
-	std::map<ntable, std::set<ntable>> deps;
-	// D: Q: similar to deps but this is just immediate rule(tbl) dependency?
-	std::map<ntable, std::set<ntable>> depends;
-	std::map<ntable, std::set<term>> mhits;
-
-	alt get_alt(const std::vector<raw_term>&);
-	void get_alt(const term_set& al, const term& h, std::set<alt>& as);
-	//void get_alt(const std::set<term>& al, const term& h, std::set<alt>&as);
+	//alt get_alt(const std::vector<raw_term>&);
+	//void get_alt(
+	//	const term_set& al, const term& h, std::set<alt>& as, size_t altid);
+	void get_alt(
+		const term_set& al, const term& h, alt_set& as, size_t altid);
 	rule get_rule(const raw_rule&);
 	
 	template<typename T> void get_sym(
@@ -232,15 +289,6 @@ private:
 
 	void get_alt_ex(alt& a, const term& h) const;
 	void merge_extensionals();
-
-	//int_t syms = 0, nums = 0, chars = 0;
-	//size_t bits = 2;
-	dict_t dict; // dict_t& dict;
-	bool bproof, datalog, optimize, unsat = false, bcqc = true,
-		 bin_transform = false, print_transformed;
-
-	size_t max_args = 0;
-	std::map<std::array<int_t, 6>, spbdd_handle> range_memo;
 
 	size_t arg(size_t v, size_t args) const {
 		return v % args;
@@ -264,8 +312,9 @@ private:
 		size_t p1, size_t p2, size_t args, c_bitsmeta& bm) const;
 
 	void init_bits();
-	static std::pair<bools, uints> permex_add_bit(
-		ints vals, const varmap& vm, c_bitsmeta& bm, c_bitsmeta& altbm);
+	static permex permex_add_bit(ints poss, c_bitsmeta& bm, c_bitsmeta& altbm);
+	//static permex permex_add_bit(
+	//	ints vals, const varmap& vm, c_bitsmeta& bm, c_bitsmeta& altbm);
 	static perminfo add_bit_perm(bitsmeta& bm, size_t arg, size_t args);
 	static spbdd_handle add_bit(
 		spbdd_handle h, const perminfo& perm, size_t arg, size_t args);
@@ -297,8 +346,10 @@ private:
 	sig get_sig(const lexeme& rel, const ints& arity);
 
 	ntable add_table(sig s);
-	static uints get_perm(const ints& vals, const varmap& m, 
-		const bitsmeta& tblbm, const bitsmeta& altbm); // const
+	//static uints get_perm(const ints& vals, const varmap& m, 
+	//	const bitsmeta& tblbm, const bitsmeta& altbm);
+	static uints get_perm(
+		const ints& poss, const bitsmeta& tblbm, const bitsmeta& altbm);
 	uints get_perm(const term& t, const varmap& m, size_t len,
 		const bitsmeta& tblbm, const bitsmeta& altbm) const;
 	void init_varmap(alt& a, const term& h, const term_set& al);
@@ -314,9 +365,8 @@ private:
 //	void align_vars(std::vector<term>& b) const;
 	spbdd_handle from_fact(const term& t);
 	term from_raw_term(const raw_term&, bool ishdr = false, size_t orderid = 0);
-	static std::pair<bools, uints> deltail(
-		const bitsmeta& abm, const bitsmeta& tblbm);
-	std::pair<bools, uints> deltail(size_t args, size_t newargs,
+	static permex deltail(const bitsmeta& abm, const bitsmeta& tblbm);
+	permex deltail(size_t args, size_t newargs,
 		const bitsmeta& abm, const bitsmeta& tblbm) const;
 	uints addtail(size_t len1, size_t len2, 
 		const bitsmeta& tblbm, const bitsmeta& abm) const;
@@ -346,6 +396,17 @@ private:
 	void out(spbdd_handle, ntable, const rt_printer&) const;
 	void get_nums(const raw_term& t);
 	flat_prog to_terms(const raw_prog& p);
+	bool get_root_type(const alt_arg& type, tbl_arg& root) const;
+	tbl_arg get_root_type(const tbl_arg& type) const;
+	tbl_arg get_fix_root_type(const tbl_arg& type);
+	bool map_type(tbl_arg from, tbl_arg to);
+	void map_type(alt_arg from, tbl_arg to);
+	//void map_type(tbl_arg to);
+	void propagate_types();
+	void propagate_types(const tbl_arg& intype);
+	void get_alt_types(const term& h, const term_set& al, size_t altid);
+	//void get_types(const std::map<term, std::set<term_set>>& m);
+	void get_types(const flat_prog& p);
 	void get_rules(flat_prog m);
 	void get_facts(const flat_prog& m);
 	ntable get_table(const sig& s);
@@ -369,13 +430,6 @@ private:
 	void cqc_minimize(std::vector<term>&) const;
 	ntable prog_add_rule(flat_prog& p, std::map<ntable, ntable>& r,
 		std::vector<term> x);
-//	std::map<ntable, std::set<spbdd_handle>> goals;
-	std::set<term> goals;
-	std::set<ntable> to_drop;
-	std::set<ntable> exts; // extensional
-	strs_t strs;
-	std::set<int_t> str_rels;
-//	std::function<int_t(void)>* get_new_rel;
 
 	bool from_raw_form(const raw_form_tree *rs, form *&froot);
 	bool to_pnf( form *&froot);
@@ -417,7 +471,8 @@ private:
 
 public:
 	tables(dict_t dict, bool bproof = false, bool optimize = true,
-		bool bin_transform = false, bool print_transformed = false);
+		bool bin_transform = false, bool print_transformed = false,
+		bool autotype = true, bool dumptype = false, bool addbit = false);
 	~tables();
 	size_t step() { return nstep; }
 	void add_prog(const raw_prog& p, const strs_t& strs);

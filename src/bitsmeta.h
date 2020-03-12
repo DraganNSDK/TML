@@ -15,8 +15,10 @@
 #include <map>
 #include <vector>
 #include "defs.h"
+#include "types.h"
 #include "bdd.h"
 class dict_t;
+//class term;
 
 // D: TODO: this is a temp fix to bring table/alt to share data, pass around.
 // I'd rather do this by making pos and methods be part of alt/table, or similar
@@ -97,6 +99,20 @@ struct bitsmeta {
 
 	void init_cache();
 	void init(const dict_t& dict);
+	static bool sync_types(
+		arg_type& l, const arg_type& r, int_t& lnum, const int_t& rnum);
+	static bool sync_types(arg_type& l, arg_type& r, int_t& lnum, int_t& rnum);
+	static bool sync_types(arg_type& l, arg_type& r, int_t& lnum, int_t& rnum,
+		bool& lchanged, bool& rchanged);
+	static bool sync_types(
+		argtypes& ltypes, argtypes& rtypes, ints& lnums, ints& rnums);
+	static bool sync_types(
+		argtypes& ltypes, argtypes& rtypes, ints& lnums, ints& rnums,
+		bool& lchng, bool& rchng);
+	bool sync_types(argtypes& rtypes, ints& rnums);
+	static bool sync_types(bitsmeta& lbits, argtypes& rtypes, ints& rnums);
+	//static bool sync_types(bitsmeta& l, term& t);
+	static bool sync_types(bitsmeta& lbits, bitsmeta& rbits);
 	void update_types(const argtypes& vtypes, const ints& vnums);
 	bool set_args(const ints& args, const argtypes& vtypes, const ints& vnums);
 	// BSR op equivalent
@@ -173,19 +189,6 @@ struct bitsmeta {
 		int_t val, const bitsmeta& bm) { // , size_t lsum = 0
 		return ::from_bit(bm.pos(bit, arg, args), val & (1 << bit));
 	}
-
-	//inline static size_t pos(
-	//	// for 'args-first', we'd need to iter bit by bit, count arg-s that have
-	//	// that bit etc., it's not worth it, I'd suggest the above (bits-first).
-	//	//size_t argsum = 0;
-	//	//for (size_t b = 0; b != bit; ++b) { // bit < varbits[arg]
-	//	//	size_t nargs = 0;
-	//	//	// order and optimize this (if worth it)
-	//	//	for (size_t i = 0; i != args; ++i) if (varbits[i] > b) ++nargs;
-	//	//	argsum += nargs;
-	//	//}
-	//	//return argsum + arg;
-	//}
 };
 
 typedef const bitsmeta& cr_bitsmeta;

@@ -271,7 +271,9 @@ driver::driver(wstring s, options o) : rp(), opts(o) {
 	rp.parse(s, dict);
 	// we don't need the dict any more, tables owns it from now on...
 	tbl = new tables(move(dict), opts.enabled(L"proof"), 
-		opts.enabled(L"optimize"), opts.enabled(L"bin"), opts.enabled(L"t"));
+		opts.enabled(L"optimize"), opts.enabled(L"bin"), opts.enabled(L"t"),
+		opts.enabled(L"autotype"), opts.enabled(L"dumptype"), 
+		opts.enabled(L"addbit"));
 }
 driver::driver(FILE *f,   options o) : driver(file_read_text(f), o) {}
 driver::driver(char *s,   options o) : driver(s2ws(string(s)), o) {}

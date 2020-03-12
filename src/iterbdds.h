@@ -19,44 +19,55 @@
 #include "bitsmeta.h"
 #include "dict.h"
 #include "defs.h"
+#include "types.h"
 class tables;
 class alt;
 
+struct tblperminfo {
+	ntable tab;
+	std::set<size_t> args;
+	bitsmeta oldbm;
+	perminfo info;
+};
+
 struct iterbdds {
 	tables& rtbls;
-	std::set<ntable> tdone;
-	std::set<std::tuple<ntable, size_t>> rdone;
-	std::set<std::tuple<ntable, size_t, size_t>> altdone;
-	std::map<std::pair<ntable, size_t>, perminfo> tblperms;
-	std::map<std::tuple<ntable, size_t, size_t>, perminfo> altperms;
-	std::vector<bits_perm> vperms;
+	std::set<tbl_arg> tdone;
+	std::set<tbl_arg> rdone;
+	//std::set<alt_arg> altdone;
+	std::map<tbl_arg, perminfo> tblargperms;
+	std::map<ntable, tblperminfo> tblperms;
+	std::map<alt_arg, perminfo> altperms;
+	std::map<std::pair<alt*, size_t>, alt_arg> altdone;
+	std::set<std::pair<tbl_arg, alt*>> bodydone;
+	//std::vector<bits_perm> vperms;
 
 	iterbdds(tables& tbls) :rtbls(tbls) {}
 
 	void clear() {
-		vperms.clear(); // clear any previous that are applied
+		//vperms.clear(); // clear any previous that are applied
 		altperms.clear();
+		tblargperms.clear();
 		tblperms.clear();
 		altdone.clear();
 		rdone.clear();
 		tdone.clear();
+		bodydone.clear();
 	}
 
+	alt* get_alt(const tbl_alt& talt) const;
+	void permute_type(const tbl_arg& intype);
 	bool permute_table(ntable tab, size_t arg);
-	inline bool permute_table(const std::pair<ntable, size_t>& targ, 
-		std::map<ntable, bits_perm>& argtbls, size_t bits, base_type type) {
-		ntable tab = targ.first;
-		size_t arg = targ.second;
-		return permute_table(tab, arg, argtbls, bits, type);
+	bool permute_table(const tbl_arg& targ, size_t bits, base_type type);
+	bool permute_table(ntable tab, size_t arg, size_t bits, base_type type) {
+		return permute_table({ tab, arg }, bits, type);
 	}
-	bool permute_table(ntable tab, size_t arg, 
-		std::map<ntable, bits_perm>& argtbls, size_t bits, base_type type);
-	bool permute_bodies(ntable tab, alt& a, 
-		std::map<ntable, bits_perm>& argtbls, const bits_perm& altperm,
+	// const bits_perm& altperm
+	bool permute_bodies(const tbl_arg& targ, const bits_perm& p, alt& a, 
 		size_t bits, base_type type);
-	bool permute_alt(ntable tab, size_t arg, size_t n, alt& a, 
-		std::map<ntable, bits_perm>& argtbls, size_t bits, base_type type);
-	bool permute_all();
+	//bool permute_alt(ntable tab, size_t arg, size_t n, alt& a, 
+	//	size_t bits, base_type type);
+	//bool permute_all();
 };
 
 #endif // __ITERBDDS_H__

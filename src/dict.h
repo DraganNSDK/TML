@@ -12,8 +12,9 @@
 // modified over time by the Author.
 #ifndef __DICT_H__
 #define __DICT_H__
-#include "defs.h"
 #include <map>
+#include "defs.h"
+#include "types.h"
 
 class dict_t {
 	typedef std::map<lexeme, int_t, lexcmp> dictmap;

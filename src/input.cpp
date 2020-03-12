@@ -858,6 +858,7 @@ wstring file_read_text(wstring wfname) {
 	return r;
 }
 
+void warning(cws o, std::wstring e) { warning(o, e, o); }
 void parse_error(cws o, std::wstring e) { parse_error(o, e, o); }
 void parse_error(wstring e, lexeme l) { parse_error(0, e, l); }
 void parse_error(std::wstring e, std::wstring s) { parse_error(0, e, s); }
@@ -894,4 +895,16 @@ void parse_error(cws o, std::wstring e, cws s) {
 	}
 	if (s) msg << L" close to \"" << std::wstring(s, p-s) << L'"';
 	throw parse_error_exception(ws2s(msg.str()));
+}
+
+void warning(cws o, std::wstring e, cws s) {
+	std::wstringstream msg; msg << L"warning: \"" << e << L'"';
+	cws p = s;
+	while (p && *p && *p != L'\n') ++p;
+	if (o != 0) {
+		long l, ch; count_pos(input::source[0], o, l, ch);
+		msg << L" at " << l << L':' << ch;
+	}
+	if (s) msg << L" close to \"" << std::wstring(s, p - s) << L'"';
+	//throw parse_error_exception(ws2s(msg.str()));
 }
