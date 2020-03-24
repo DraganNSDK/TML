@@ -40,6 +40,7 @@ wostream& inf() { static wostream& os = output::to(L"info");        return os; }
 wostream& dbg() { static wostream& os = output::to(L"debug");       return os; }
 wostream& repl(){ static wostream& os = output::to(L"repl-output"); return os; }
 wostream& ms()  { static wostream& os = output::to(L"benchmarks");  return os; }
+wostream& dump(){ static wostream& os = output::to(L"dump");        return os; }
 }
 
 void driver::transform_len(raw_term& r, const strs_t& s) {
@@ -216,8 +217,7 @@ next_sequence:
 			return true;
 		bool fp = prog_run(rp, pd.n, steps, break_on_step);
 		if (fp) {
-			DBG(static wostream& ds = output::to(L"dump");)
-			DBG(if (opts.enabled(L"dump")) out(ds);)
+			//DBG(if (opts.enabled(L"dump")) out(o::dump());)
 			if (pd.n == rp.p.size()-1) // all progs fp
 				return result = true, true;
 			++pd.n;
@@ -264,7 +264,6 @@ void driver::init() {
 	bdd::init();
 }
 
-// driver(raw_progs(s), o) 
 driver::driver(wstring s, options o) : rp(), opts(o) {
 	dict_t dict;
 	// parse outside the rp's ctor
@@ -274,6 +273,9 @@ driver::driver(wstring s, options o) : rp(), opts(o) {
 		opts.enabled(L"optimize"), opts.enabled(L"bin"), opts.enabled(L"t"),
 		opts.enabled(L"autotype"), opts.enabled(L"dumptype"), 
 		opts.enabled(L"addbit"));
+	set_print_step(opts.enabled(L"ps"));
+	set_print_updates(opts.enabled(L"pu"));
+	set_populate_tml_update(opts.enabled(L"tml_update"));
 }
 driver::driver(FILE *f,   options o) : driver(file_read_text(f), o) {}
 driver::driver(char *s,   options o) : driver(s2ws(string(s)), o) {}
@@ -281,16 +283,6 @@ driver::driver(options o)            : driver(o.input(), o) {}
 driver::driver(FILE *f)              : driver(f, options()) {}
 driver::driver(wstring s)            : driver(s, options()) {}
 driver::driver(char *s)              : driver(s, options()) {}
-//driver::driver(raw_progs rp)         : driver(move(rp), options()) {}
-//driver::driver(raw_progs rp, options o) : rp(move(rp)), opts(o) {
-//	//rp.parse();
-//	tbl = new tables(opts.enabled(L"proof"), opts.enabled(L"optimize"),
-//		opts.enabled(L"bin"), opts.enabled(L"t"));
-//}
-//driver::driver(FILE *f,   options o):driver(raw_progs(f), o) {}
-//driver::driver(wstring s, options o):driver(raw_progs(s), o) {}
-//driver::driver(char *s,   options o):driver(raw_progs(s2ws(string(s))), o) {}
-//driver::driver(options o)            : driver(raw_progs(o.input()), o) {}
 
 driver::~driver() {
 	if (tbl) delete tbl;

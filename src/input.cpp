@@ -22,6 +22,11 @@ using namespace std;
 
 cws_range input::source{0,0};
 
+/**
+ * This function tokenizes the input string
+ * @param moving pointer to the string part
+ * @return pointer to the beginning and end of lexeme in the string
+ */
 lexeme lex(pcws s) {
 	while (iswspace(**s)) ++*s;
 	if (!**s) return { 0, 0 };
@@ -50,22 +55,6 @@ lexeme lex(pcws s) {
 	if (**s == L'<' && *(*s + 1) == L'-' && *(*s + 2) == L'>') {
 		return *s += 3, lexeme{ *s - 3, *s };
 	}
-
-	//ALU operators:
-	//SHR, SHL, XXX: EQ?
-	//if (**s == L'>' && !(*(*s + 1) == L'>')) return *s += 2, lexeme{ *s - 2, *s };
-	//if (**s == L'<' && !(*(*s + 1) == L'<')) return *s += 2, lexeme{ *s - 2, *s };
-	////if (**s == L'=' && *(*s + 1) == L'=') return *s += 2, lexeme{ *s - 2, *s };
-	/*
-	//ADD, SUB, MULT, BITWOR, BITWAND, BITWXOR
-	//XXX: lexed below with the rest of single character symbols
-	//XXX: check for substractin symbol "-"
-	if (**s == L'+' || **s == L'-' || **s == L'*' ||
-			**s == L'|' || **s == L'&' || **s == L'^' ) {
-		return *s += 1, lexeme{ *s - 1, *s };
-	}
-	*/
-
 	// LEQ: put this in front if '<file>' below (as that'll eat us + error out)
 	//if (**s == L'<') {
 	if (**s == L'<' && !(*(*s + 1) == L'<')) {
@@ -96,28 +85,25 @@ lexeme lex(pcws s) {
 		if (*++*s==L'-' || **s==L'=') return ++*s, lexeme{ *s-2, *s };
 		++*s; // treat like ? and eat all after that
 		istype = true;
-		//else parse_error(*s, err_chr);
-		//return ++*s, lexeme{ *s-1, *s }; // deffer for parsing
-		//while (*++*s != L'>') if (!**s) parse_error(t, err_fname);
-		//return { t, ++(*s) };
-		//cws t0 = *s;
-		//while (*++*s != L'[')
-		//	if (!**s) parse_error(t, unmatched_quotes);
-		//	else if (**s == L'\\' && !wcschr(L"\\\"", *++*s))
-		//		parse_error(*s, err_escape);
 	}
 	// NEQ: make sure we don't turn off directives (single '!'). limits?
 	if (**s == L'!' && *(*s + 1) == L'=') {
 		return *s += 2, lexeme{ *s - 2, *s };
 	}
+
+	//ARITH operators:
+	//SHR, SHL, XXX: EQ?
+	if (**s == L'>' && (*(*s + 1) == L'>')) return *s += 2, lexeme{ *s - 2, *s };
+	if (**s == L'<' && (*(*s + 1) == L'<')) return *s += 2, lexeme{ *s - 2, *s };
+	//if (**s == L'=' && *(*s + 1) == L'=') return *s += 2, lexeme{ *s - 2, *s };
+
 	// TODO: single = instead of == recheck if we're not messing up something?
 	if (**s == L'=') return ++*s, lexeme{ *s-1, *s };
 	if (wcschr(L"!~.,;(){}$@=<>|&", **s)) return ++*s, lexeme{ *s-1, *s };
 	if (wcschr(L"!~.,;(){}$@=<>|&^+*[]", **s)) return ++*s, lexeme{ *s-1, *s };
-	//TODO: review - for substraction
+	//TODO: review - for subtraction
 	if (wcschr(L"?-", **s)) ++*s;
 	if (!iswalnum(**s) && **s != L'_') parse_error(*s, err_chr);
-	//while (**s && (iswalnum(**s) || **s == L'_')) ++*s;
 	if (!istype)
 		while (**s && (iswalnum(**s) || **s == L'_')) ++*s;
 	else
@@ -241,38 +227,36 @@ bool elem::parse(const lexemes& l, size_t& pos) {
 		return e = l[pos++], type = EQ, true;
 	}
 
-	//TODO: review puropose of this original operators, symbol is in conflict
-	// with bithwise operators
-	if (L'|' == l[pos][0][0]) {
+	if ((L'|' == l[pos][0][0]) && (L'|' == l[pos][0][1])) {
 		return e = l[pos++], type = OR, true;
 	}
-	if (L'&' == l[pos][0][0]) {
+	if ((L'&' == l[pos][0][0]) && (L'&' == l[pos][0][1])) {
 		return e = l[pos++], type = AND, true;
 	}
 
 	if (L'+' == l[pos][0][0]) {
-		return e = l[pos++], type = ALU, alu_op = ADD, true;
+		return e = l[pos++], type = ARITH, arith_op = ADD, true;
 	}
 	if (L'-' == l[pos][0][0]) {
-		return e = l[pos++], type = ALU, alu_op = SUB, true;
+		return e = l[pos++], type = ARITH, arith_op = SUB, true;
 	}
 	if (L'*' == l[pos][0][0]) {
-		return e = l[pos++], type = ALU, alu_op = MULT, true;
+		return e = l[pos++], type = ARITH, arith_op = MULT, true;
 	}
 	if (L'|' == l[pos][0][0]) {
-		return e = l[pos++], type = ALU, alu_op = BITWOR, true;
+		return e = l[pos++], type = ARITH, arith_op = BITWOR, true;
 	}
 	if (L'&' == l[pos][0][0]) {
-		return e = l[pos++], type = ALU, alu_op = BITWAND, true;
+		return e = l[pos++], type = ARITH, arith_op = BITWAND, true;
 	}
 	if (L'^' == l[pos][0][0]) {
-		return e = l[pos++], type = ALU, alu_op = BITWXOR, true;
+		return e = l[pos++], type = ARITH, arith_op = BITWXOR, true;
 	}
 	if (L'>' == l[pos][0][0] && L'>' == l[pos][0][1]) {
-		return e = l[pos++], type = ALU, alu_op = SHR, true;
+		return e = l[pos++], type = ARITH, arith_op = SHR, true;
 	}
 	if (L'<' == l[pos][0][0] && L'<' == l[pos][0][1]) {
-		return e = l[pos++], type = ALU, alu_op = SHL, true;
+		return e = l[pos++], type = ARITH, arith_op = SHL, true;
 	}
 
 	if (!iswalnum(*l[pos][0]) && !wcschr(L"\"'-?:", *l[pos][0])) return false;
@@ -288,7 +272,8 @@ bool elem::parse(const lexemes& l, size_t& pos) {
 		else throw 0;
 	}
 	else if (*l[pos][0] == L'?') type = VAR;
-	else if (*l[pos][0] == L':') type = ARGTYP;
+	else if (*l[pos][0] == L':') 
+		type = ARGTYP;
 	else if (iswalpha(*l[pos][0])) {
 		size_t len = l[pos][1]-l[pos][0];
 		if( len == 6 && !wcsncmp(l[pos][0], L"forall", len ))
@@ -309,31 +294,24 @@ bool raw_term::parse(const lexemes& l, size_t& pos, const raw_prog& prog) {
 	lexeme s = l[pos];
 	if ((neg = *l[pos][0] == L'~')) ++pos;
 	bool rel = false, noteq = false, eq = false, leq = false, gt = false,
-		lt = false, geq = false, bltin = false, alu = false;
-	// D: why was '<' a terminator? (only in directive). Removed, messes up LT.
-	// D: why is ':' a terminator for the term? we need it for the ?var:type[]
-	t_alu_op alu_op_aux = NOP;
+		lt = false, geq = false, bltin = false, arith = false;
+	t_arith_op arith_op_aux = NOP;
 	//XXX: review for "-"
-	//elem::etype prevtype = elem::NONE;
 	nargs = 0;
 	bool isarg = false; // basically telling us whether previous elem was an arg
-	//while (!wcschr(L".:,;{}-", *l[pos][0])) { // L".:,;{}|&-<"
-	while (true) { // :
-		if (wcschr(L".:,;{}-", *l[pos][0])) {
-			//bool isarg = prevtype == elem::SYM || prevtype == elem::NUM || 
-			//	prevtype == elem::CHR || prevtype == elem::STR || 
-			//	prevtype == elem::VAR;
-			if (!(isarg && L':' == *l[pos][0]))
+	// D: why was '<' a terminator? (only in directive). Removed, messes up LT.
+	// these are the term terminators, ':' is not on its own but if :- or :=
+	//while (true) {
+	while (!wcschr(L".,;{}-", *l[pos][0])) { // L".:,;{}|&-<"
+		// check if : is actually a terminator or the :type[bits]
+		if (L':' == *l[pos][0])
+			if (L'-' == l[pos][0][1] || L'=' == l[pos][0][1] || !isarg)
 				break;
-			else {
-				//wcout << L"arg type:" << L"" << endl;
-			}
-		}
 		if (e.emplace_back(), !e.back().parse(l, pos)) return false;
 		else if (pos == l.size())
 			parse_error(input::source[1], err_eof, s[0]);
 		elem& el = e.back(); // TODO: , el = e.back(), !el.parse(l, pos)
-		isarg = false; //prevtype = el.type;
+		isarg = false;
 		switch (el.type) {
 			case elem::EQ: eq = true; break;
 			case elem::NEQ: noteq = true; break;
@@ -341,13 +319,11 @@ bool raw_term::parse(const lexemes& l, size_t& pos, const raw_prog& prog) {
 			case elem::GT: gt = true; break;
 			case elem::LT: lt = true; break;
 			case elem::GEQ: geq = true; break;
-			case elem::ALU: alu = true; alu_op_aux = e.back().alu_op; break;
 			case elem::SYM:
 				if (prog.builtins.find(el.e) != prog.builtins.end()) {
 					el.type = elem::BLTIN;
 					bltin = true;
 				}
-				// fall through is tempting but as soon as we add code below...
 				isarg = true;
 				break;
 			case elem::NUM:
@@ -355,6 +331,11 @@ bool raw_term::parse(const lexemes& l, size_t& pos, const raw_prog& prog) {
 			case elem::STR:
 			case elem::VAR:
 				isarg = true;
+				break;
+			case elem::ARITH: 
+				arith = true; 
+				arith_op_aux = e.back().arith_op; 
+				break;
 			default: break;
 		}
 		if (isarg) ++nargs;
@@ -374,7 +355,7 @@ bool raw_term::parse(const lexemes& l, size_t& pos, const raw_prog& prog) {
 		extype = raw_term::BLTIN; // isbltin = true;
 		return calc_arity(), true;
 	}
-	if ( (noteq || eq) && !alu) {
+	if ( (noteq || eq) && !arith) {
 		if (e.size() < 3)
 			parse_error(l[pos][0], err_3_els_expected, l[pos]);
 		// only supporting smth != smthelse (3-parts) and negation in front ().
@@ -385,7 +366,7 @@ bool raw_term::parse(const lexemes& l, size_t& pos, const raw_prog& prog) {
 		extype = raw_term::EQ; // iseq = true;
 		return calc_arity(), true;
 	}
-	if ((leq || gt) && !alu) {
+	if ((leq || gt) && !arith) {
 		if (e.size() < 3)
 			parse_error(l[pos][0], err_3_els_expected, l[pos]);
 		// only supporting smth != smthelse (3-parts) and negation in front ().
@@ -407,23 +388,22 @@ bool raw_term::parse(const lexemes& l, size_t& pos, const raw_prog& prog) {
 		extype = raw_term::LEQ;
 		return calc_arity(), true;
 	}
-	if (alu) {
+	if (arith) {
 
-		// ALU operations are currently implemented to work with three vars
+		// ARITH operations are currently implemented to work with three vars
 		// var OPERATOR var RELATIONSHIP var
 		// supported OPERATORs : + * | & ^ << >> (XXX - is TBD)
 		// supported RELATIONSHIPs: = (TODO: add support for <= => < > != )
 		// TODO: improve checks here
 		if (e.size() < 4)
 			parse_error(l[pos][0], err_term_or_dot, l[pos]);
-		if (e[1].type != elem::ALU || e[3].type != elem::EQ)
+		if (e[1].type != elem::ARITH || e[3].type != elem::EQ)
 			parse_error(l[pos][0], err_term_or_dot, l[pos]);
 
 		//iseq = true;
 		neg = false;
-		//isalu = true;
-		alu_op = alu_op_aux;
-		extype = raw_term::ALU;
+		arith_op = arith_op_aux;
+		extype = raw_term::ARITH;
 		//return calc_arity(), true;
 		return true;
 	}
@@ -450,7 +430,7 @@ void raw_term::insert_parens(lexeme op, lexeme cl) {
 void raw_term::calc_arity() {
 	size_t dep = 0;
 	arity = {0};
-	//if (iseq || isleq || islt || isalu) {
+	//if (iseq || isleq || islt || isarith) {
 	if (extype > raw_term::REL && extype < raw_term::BLTIN) {
 		arity = { 2 };
 		return;
@@ -458,7 +438,7 @@ void raw_term::calc_arity() {
 	if (e.size() == 1) return;
 	for (size_t n = 2; n < e.size()-1; ++n)
 		if (e[n].type == elem::OPENP) ++dep, arity.push_back(-1);
-		else if (e[n].type == elem::ARGTYP) {} //  && e[n-1].type == elem::VAR
+		else if (e[n].type == elem::ARGTYP) {} // && e[n-1].type == elem::VAR
 		else if (e[n].type != elem::CLOSEP) {
 			if (arity.back() < 0) arity.push_back(1);
 			else ++arity.back();
@@ -716,10 +696,6 @@ bool raw_prog::parse(const lexemes& l, size_t& pos) {
 	return true;
 }
 
-//raw_progs::raw_progs(FILE* f) : raw_progs(file_read_text(f)) {}
-//
-//raw_progs::raw_progs(const std::wstring& s) { parse(s); }
-
 raw_progs::raw_progs() { } // parse(s); 
 
 void raw_progs::parse(const std::wstring& s, dict_t& dict, bool newseq) {
@@ -730,8 +706,8 @@ void raw_progs::parse(const std::wstring& s, dict_t& dict, bool newseq) {
 		if (!l.size()) return;
 		auto prepare_builtins = [&dict, this](raw_prog& x) {
 			// BLTINS: prepare builtins (dict)
-			for (const wstring& s : str_bltins)
-				x.builtins.insert(dict.get_lexeme(s));
+			for (const wstring& str : str_bltins)
+				x.builtins.insert(dict.get_lexeme(str));
 		};
 		if (*l[pos][0] != L'{') {
 			raw_prog& x = !p.size() || newseq
@@ -769,7 +745,7 @@ bool operator<(const raw_term& x, const raw_term& y) {
 	//if (x.iseq != y.iseq) return x.iseq < y.iseq;
 	//if (x.isleq != y.isleq) return x.isleq < y.isleq;
 	//if (x.islt != y.islt) return x.islt < y.islt;
-	//if (x.isalu != y.isalu) return x.isalu < y.isalu;
+	//if (x.isarith != y.isarith) return x.isarith < y.isarith;
 	if (x.e != y.e) return x.e < y.e;
 	if (x.arity != y.arity) return x.arity < y.arity;
 	return false;

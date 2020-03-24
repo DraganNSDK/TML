@@ -47,6 +47,8 @@ void bitsmeta::init(const dict_t& dict) {
 				// always init for STR/CHR or not? may alt universe size differ?
 				if (type.bitness == 0) {
 					type.bitness = BitScanR(dict.nsyms()); // nsyms-1? I guess
+					// add extra because we haven't handled syms properly yet
+					// i.e. we have 'shared dict universe' for all sym/str args
 					type.bitness += 2; // ...will be removed
 				}
 				break;
@@ -54,6 +56,7 @@ void bitsmeta::init(const dict_t& dict) {
 				// it's always 8, always init (or if correct it's 0)
 				if (type.bitness == 0) {
 					type.bitness = 8;
+					// there's a bug with tight bits (dycks example), safe bits
 					type.bitness += 2; // ...will be removed
 				}
 				break;
@@ -61,6 +64,7 @@ void bitsmeta::init(const dict_t& dict) {
 				if (type.bitness == 0) {
 					// calc bitness for ints (we just have nums at this point).
 					type.bitness = BitScanR(nums[i]); // un_mknum(args[i])
+					// there's a bug with tight bits (dycks example), safe bits
 					type.bitness += 2; // ...will be removed
 				}
 				break;
@@ -183,6 +187,11 @@ void bitsmeta::update_types(const argtypes& vtypes, const ints& vnums) {
 	}
 	// this updates 'live', caches may change
 	if (changed) init_cache();
+}
+
+bool bitsmeta::sync_types(argtypes& ltypes, const argtypes& rtypes, 
+	ints& lnums, const ints& rnums, size_t larg, size_t rarg) {
+	return sync_types(ltypes[larg], rtypes[rarg], lnums[larg], rnums[rarg]);
 }
 
 bool bitsmeta::sync_types(

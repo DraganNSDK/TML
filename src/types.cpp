@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <list>
 #include "types.h"
+#include "bitsmeta.h"
 #include "err.h"
 using namespace std;
 
@@ -29,3 +30,31 @@ wostream& operator<<(wostream& os, const tbl_arg& arg) {
 	return os << L"(" << arg.tab << L"," << arg.arg << L")"; // << endl;
 }
 
+wostream& operator<<(std::wostream& os, const arg_type& type) {
+	switch (type.type) {
+		case base_type::CHR: os << L":chr"; break;
+		case base_type::STR: os << L":str"; break;
+		case base_type::INT: os << L":int"; break;
+		case base_type::NONE: os << L":none"; break;
+	}
+	return os << L"[" << type.bitness << L"]";
+}
+
+wostream& operator<<(wostream& os, const argtypes& types) {
+	//for (const arg_type& type : types) {
+	for (size_t i = 0; i != types.size(); ++i) {
+		if (i > 0) os << L" ";
+		os << types[i];
+	}
+	return os;
+}
+
+wostream& operator<<(wostream& os, const bitsmeta& bm) {
+	//for (const arg_type& type : types) {
+	for (size_t i = 0; i != bm.types.size(); ++i) {
+		if (i > 0) os << L" ";
+		os << bm.types[i];
+		os << L"[" << bm.nums[i] << L"]";
+	}
+	return os;
+}

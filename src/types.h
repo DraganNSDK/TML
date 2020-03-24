@@ -24,7 +24,8 @@
 
 #include "defs.h"
 
-class alt_arg;
+struct alt_arg;
+struct bitsmeta;
 
 /* argument type's base-type enum */
 //enum class basetype : std::uint8_t { NONE = 0, INT, CHR, STR };
@@ -35,12 +36,19 @@ struct arg_type {
 	base_type type = base_type::NONE;
 	size_t bitness;
 	arg_type() : type(base_type::NONE), bitness(0) {}
-	arg_type(base_type type, size_t bitness) : type(type), bitness(bitness) {
+	arg_type(base_type btype, size_t bits) : type(btype), bitness(bits) {
 		//DBG(assert(bitness < 100););
 	}
 	void set_bitness(size_t bits) { 
 		DBG(assert(bits < 100););
 		bitness = bits;
+	}
+	inline bool operator<(const arg_type& other) const {
+		if (type != other.type) return type < other.type;
+		return bitness < other.bitness;
+	}
+	inline bool operator==(const arg_type& other) const {
+		return type == other.type && bitness == other.bitness;
 	}
 };
 
@@ -49,7 +57,7 @@ typedef std::vector<arg_type> argtypes;
 struct tbl_arg {
 	ntable tab;
 	size_t arg;
-	tbl_arg(ntable tab, size_t arg) : tab(tab), arg(arg) {}
+	tbl_arg(ntable t, size_t i) : tab(t), arg(i) {}
 	tbl_arg(const alt_arg& aa);
 	inline bool operator<(const tbl_arg& other) const {
 		if (tab != other.tab) return tab < other.tab;
@@ -78,7 +86,7 @@ struct alt_arg {
 	ntable tab;
 	int_t alt;
 	size_t arg;
-	alt_arg(ntable tab, int_t alt, size_t arg) : tab(tab), alt(alt), arg(arg) {}
+	alt_arg(ntable t, int_t a, size_t i) : tab(t), alt(a), arg(i) {}
 	alt_arg(const tbl_arg& ta) : tab(ta.tab), alt(-1), arg(ta.arg) {}
 	bool operator<(const alt_arg& aa) const {
 		if (tab != aa.tab) return tab < aa.tab;
@@ -89,7 +97,9 @@ struct alt_arg {
 
 std::wostream& operator<<(std::wostream&, const alt_arg&);
 std::wostream& operator<<(std::wostream&, const tbl_arg&);
-
+std::wostream& operator<<(std::wostream&, const arg_type&);
+std::wostream& operator<<(std::wostream&, const argtypes&);
+std::wostream& operator<<(std::wostream& os, const bitsmeta& bm);
 //bool operator<(const alt_arg& aarg, const tbl_arg& ta);
 
 #endif // __TYPES_H__

@@ -61,6 +61,7 @@ typedef size_t nlevel;
 #define has(x, y) ((x).find(y) != (x).end())
 #define hasb(x, y) std::binary_search(x.begin(), x.end(), y)
 #define hasbc(x, y, f) std::binary_search(x.begin(), x.end(), y, f)
+#define hasf(x, y) (std::find((x).begin(), (x).end(), (y)) != (x).end())
 #define measure_time_start() start = clock()
 #define measure_time_end() end = clock(), \
 		o::ms() << std::fixed << std::setprecision(2) << \
@@ -83,68 +84,12 @@ namespace o { // call driver::init() before using any o::xxx() wostream
 	std::wostream& dbg(); // for debugging (point to null if not Debug)
 	std::wostream& repl();// for REPL
 	std::wostream& ms();  // benchmarks output for time measurings
+	std::wostream& dump();// for dumping of database or goals/proofs
 }
 
 typedef enum  {
-	NOP, ADD, SUB, MULT, BITWOR, BITWAND, BITWXOR, SHR, SHL
-} t_alu_op;
-
-// argument type's base-type enum 
-////enum class basetype : std::uint8_t { NONE = 0, INT, CHR, STR };
-//enum class base_type { NONE = 0, INT, CHR, STR };
-//
-//// D: make this just an int_t, lower bits for type + bitness the rest.
-//struct arg_type {
-//	base_type type = base_type::NONE;
-//	size_t bitness;
-//	arg_type() : type(base_type::NONE), bitness(0) {}
-//	arg_type(base_type type, size_t bitness) : type(type), bitness(bitness) {}
-//};
-//
-//typedef std::vector<arg_type> argtypes;
-//
-//struct tbl_arg {
-//	ntable tab;
-//	size_t arg;
-//	tbl_arg(ntable tab, size_t arg) : tab(tab), arg(arg) {}
-//	tbl_arg(const alt_arg& aa) : tab(aa.tab), arg(aa.arg) {
-//		DBG(assert(aa.alt == -1););
-//	}
-//	inline bool operator<(const tbl_arg& other) const {
-//		if (tab != other.tab) return tab < other.tab;
-//		return arg < other.arg;
-//	}
-//	inline bool operator==(const tbl_arg& other) const {
-//		return tab == other.tab && arg == other.arg;
-//	}
-//	inline bool operator!=(const tbl_arg& r) { return !operator==(*this, r); }
-//	inline bool operator> (const tbl_arg& r) { return  operator<(r, *this); }
-//	inline bool operator<=(const tbl_arg& r) { return !operator>(*this, r); }
-//	inline bool operator>=(const tbl_arg& r) { return !operator<(*this, r); }
-//};
-////inline bool operator!=(const tbl_arg& l, const tbl_arg& r)
-////{ return !operator==(l, r); }
-////inline bool operator> (const tbl_arg& l, const tbl_arg& r)
-////{ return  operator<(r, l); }
-////inline bool operator<=(const tbl_arg& l, const tbl_arg& r)
-////{ return !operator>(l, r); }
-////inline bool operator>=(const tbl_arg& l, const tbl_arg& r)
-////{ return !operator<(l, r); }
-//
-//struct alt_arg {
-//	ntable tab;
-//	int_t alt;
-//	size_t arg;
-//	alt_arg(ntable tab, int_t alt, size_t arg) : tab(tab), alt(alt), arg(arg) {}
-//	alt_arg(const tbl_arg& ta) : tab(ta.tab), alt(-1), arg(ta.arg) {}
-//	bool operator<(const alt_arg& aa) const {
-//		if (tab != aa.tab) return tab < aa.tab;
-//		if (alt != aa.alt) return alt < aa.alt;
-//		return arg < aa.arg;
-//	}
-//};
-//
-////bool operator<(const alt_arg& aarg, const tbl_arg& ta);
+	NOP, ADD, SUB, MULT, BITWAND, BITWOR, BITWXOR, BITWNOT, SHR, SHL
+} t_arith_op;
 
 #endif // __DEFS_H__
 //#define TRANSFORM_BIN_DRIVER

@@ -17,21 +17,22 @@
 #include "defs.h"
 #include "types.h"
 #include "bdd.h"
-class dict_t;
-//class term;
 
-// D: TODO: this is a temp fix to bring table/alt to share data, pass around.
-// I'd rather do this by making pos and methods be part of alt/table, or similar
+class dict_t;
+
+// D: TODO: a struct that enables table/alt to share data around.
+// maybe do this by making pos and methods be part of alt/table, or similar
 struct bitsmeta {
-	// types.size() is always set at args (or table.len) right after .ctor
+	// types.size() is always set at args (or table.len) in or right after .ctor
 	argtypes types;
 	// D: we need to track exact 'nums' for the range leq (bits are not enough).
 	ints nums;
 	std::vector<size_t> vargs;
 	size_t nterms = 0; // D: # of terms/types processed so far.
-	std::map<size_t, size_t> mleftbits;
 	size_t args_bits = 0; // like args * bits (just now variable sum)
 
+	// cache
+	std::map<size_t, size_t> mleftbits;
 	size_t maxbits;
 	std::map<size_t, std::map<size_t, size_t>> mleftargs;
 
@@ -42,43 +43,18 @@ struct bitsmeta {
 	}
 	/* sort of a copy .ctor w/ bits changed (for one arg) - supports add_bit */
 	bitsmeta(const bitsmeta& src, size_t arg, size_t bits2add = 1)
-		: bitsmeta(src.types.size()) {
+		: bitsmeta(src.types.size()) 
+	{
+		// we allow only one bit add at the time (for the moment)
 		DBG(assert(src.types.size() > 0);); // don't call this if empty
-		//bm.set_args(ints(src.types.size()), src.types, src.nums);
+		DBG(assert(bits2add == 1););
 		types = src.types;
 		nums = src.nums; // we don't need this, or increase ++nums[arg] too?
 		vargs = src.vargs;
 		++nterms; // set init 'flag'
-		// we allow only one bit add at the time (for the moment)
-		DBG(assert(bits2add == 1););
 		// TODO: check if this makes sense (e.g. if it's CHR it has to be 8)
 		++types[arg].bitness; // increase bits...
-		//bm.init(dict);
 		init_cache();
-		//size_t lsum = 0, args = types.size(), maxb = 0;
-		//mleftbits.clear();
-		//mleftbits[vargs[0]] = lsum;
-		////++types[arg].bitness; // increase bits...
-		//// TODO: check if this makes sense (e.g. if CHR it has to be 8)
-		//// recalculate everything...
-		//for (size_t i = 0; i < args-1; ++i) { // [0..args-2] (skip last)
-		//	lsum += types[vargs[i]].bitness;
-		//	mleftbits[vargs[i+1]] = lsum;
-		//	maxb = std::max(maxb, types[vargs[i]].bitness);
-		//}
-		//args_bits = mleftbits.at(vargs[args-1]) + types[vargs[args-1]].bitness;
-		//maxbits = std::max(maxb, types[vargs[args-1]].bitness);
-		//size_t argsum = 0;
-		//if (maxbits == 0)
-		//	return;
-		//mleftargs.clear();
-		//for (int_t bit = maxbits - 1; bit >= 0; --bit) {
-		//	std::map<size_t, size_t>& mpos = mleftargs[bit];
-		//	for (size_t arg = 0; arg != types.size(); ++arg)
-		//		if (types[vargs[arg]].bitness > size_t(bit))
-		//			mpos[vargs[arg]] = argsum++;
-		//}
-		//DBG(assert(argsum == args_bits););
 	}
 
 	int_t get_chars(size_t arg) const // TODO: 256 ? 
@@ -99,6 +75,8 @@ struct bitsmeta {
 
 	void init_cache();
 	void init(const dict_t& dict);
+	static bool sync_types(argtypes& ltypes, const argtypes& rtypes, 
+		ints& lnums, const ints& rnums, size_t larg, size_t rarg);
 	static bool sync_types(
 		arg_type& l, const arg_type& r, int_t& lnum, const int_t& rnum);
 	static bool sync_types(arg_type& l, arg_type& r, int_t& lnum, int_t& rnum);
@@ -129,11 +107,10 @@ struct bitsmeta {
 
 	/*
 	This is the ordered variable-bits pos
-	(it's static atm but we should make this part of alt or table)
-	- vbits - contains variable 'bits' # for each of the arg (needed to calc.)
+	- mleftargs - a map/cache of positions
 	- vargs - vector of arg-s ordered (has to contain all args, no duplicates)
 	*/
-	size_t pos(size_t bit, size_t arg, size_t args) const { //, size_t lsum = 0
+	size_t pos(size_t bit, size_t arg, size_t args) const {
 		const std::map<size_t, size_t>& mpos = mleftargs.at(bit);
 		return mpos.at(arg); // vargs[arg]
 
@@ -159,10 +136,9 @@ struct bitsmeta {
 	- arg - argument order #
 	- args - # of arguments
 	- val - const value to bit compare
-	- lsum - temp cached (to be deprecated)
 	*/
 	inline spbdd_handle from_bit(size_t bit, size_t arg, size_t args,
-		int_t val) const { // , size_t lsum = 0
+		int_t val) const {
 		return ::from_bit(pos(bit, arg, args), val & (1 << bit));
 	}
 
@@ -176,9 +152,6 @@ struct bitsmeta {
 	/*
 	This is the ordered variable-bits pos
 	(it's static atm but we should make this part of alt or table)
-	- vbits - contains variable 'bits' # for each of the arg (needed to calc.)
-	- vargs - vector of arg-s ordered (has to contain all args, no duplicates)
-	- lsum - sum of all the bits 'on the left' (to optimize, same for all bit-s)
 	*/
 	static size_t pos(size_t bit, size_t arg, size_t args, const bitsmeta& bm) {
 		return bm.pos(bit, arg, args);
@@ -186,7 +159,7 @@ struct bitsmeta {
 
 	// inline not worth much anyways
 	inline static spbdd_handle from_bit(size_t bit, size_t arg, size_t args,
-		int_t val, const bitsmeta& bm) { // , size_t lsum = 0
+		int_t val, const bitsmeta& bm) {
 		return ::from_bit(bm.pos(bit, arg, args), val & (1 << bit));
 	}
 };

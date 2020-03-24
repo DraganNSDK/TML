@@ -24,7 +24,6 @@
 #include "term.h"
 #include "bitsmeta.h"
 #include "iterbdds.h"
-//#include "iterbdds_slow.h"
 #include "dict.h"
 typedef int_t rel_t;
 struct raw_term;
@@ -75,16 +74,27 @@ struct body {
 	spbdd_handle q, tlast, rlast;
 	// TODO: to reinit get_perm on add_bit (well in the pfp/fwd), temp fix only.
 	// (not sure how else to consistently perm from old bits perm to new one?)
+	//ints vals;
 	ints poss;
-//	static std::set<body*, ptrcmp<body>> &s;
+	// only for count, created on first use (rarely used)
+	bools inv;
+	//	static std::set<body*, ptrcmp<body>> &s;
 	bool operator<(const body& t) const {
 		if (q != t.q) return q < t.q;
 		if (neg != t.neg) return neg;
 		if (ext != t.ext) return ext;
 		if (tab != t.tab) return tab < t.tab;
 		if (ex != t.ex) return ex < t.ex;
-		if (perm != t.perm) return perm < t.perm; // return perm < t.perm;
+		if (perm != t.perm) return perm < t.perm;
+		//if (vals != t.vals) return vals < t.vals;
 		return poss < t.poss;
+	}
+	bools init_perm_inv(size_t args) {
+		inv = bools(args, false);
+		// only count alt vars that are 'possible permutes' (of a body bit) 
+		for (size_t i = 0; i < perm.size(); ++i)
+			if (!ex[i]) inv[perm[i]] = true;
+		return inv;
 	}
 };
 
@@ -108,17 +118,13 @@ struct alt : public std::vector<body*> {
 	size_t bltinsize;
 	bitsmeta bm;
 	std::set<ntable> bodytbls; // map all b-s in alt, even if just consts
-	bool operator<(const alt& t) const {
-		if (varslen != t.varslen) return varslen < t.varslen;
-		if (rng != t.rng) return rng < t.rng;
-		if (eq != t.eq) return eq < t.eq;
-		return (std::vector<body*>)*this<(std::vector<body*>)t;
+
+	bool operator<(const alt& a) const {
+		if (varslen != a.varslen) return varslen < a.varslen;
+		if (rng != a.rng) return rng < a.rng;
+		if (eq != a.eq) return eq < a.eq;
+		return (std::vector<body*>)*this<(std::vector<body*>)a;
 	}
-	//// tracks argument dependencies across the rules, tables
-	//std::map<size_t, std::vector<tbl_arg>> argsdep;
-	//// we could (rarely) have multiple bodies of same tbl using different vars
-	//std::map<tbl_arg, std::vector<size_t>> invargsdep;
-	//std::set<ntable> depends;
 };
 
 struct altpaircmp {
@@ -137,11 +143,11 @@ struct rule : public std::vector<alt*> {
 	size_t len;
 	bdd_handles last;
 	term t;
-	bool operator<(const rule& t) const {
-		if (neg != t.neg) return neg;
-		if (tab != t.tab) return tab < t.tab;
-		if (eq != t.eq) return eq < t.eq;
-		return (std::vector<alt*>)*this < (std::vector<alt*>)t;
+	bool operator<(const rule& r) const {
+		if (neg != r.neg) return neg;
+		if (tab != r.tab) return tab < r.tab;
+		if (eq != r.eq) return eq < r.eq;
+		return (std::vector<alt*>)*this < (std::vector<alt*>)r;
 	}
 	bool equals_termwise(const rule& r) const {
 		if (t != r.t || size() != r.size()) return false;
@@ -154,7 +160,7 @@ struct rule : public std::vector<alt*> {
 struct table {
 	sig s;
 	size_t len, priority = 0;
-	spbdd_handle t = hfalse;
+	spbdd_handle tq = hfalse;
 	bdd_handles add, del;
 	std::vector<size_t> r;
 	bool ext = true; // extensional
@@ -167,19 +173,23 @@ struct table {
 	bool commit(DBG(size_t));
 	spbdd_handle init_bits();
 	//table() {}
-	table(const sig& s, size_t len, const dict_t& dict) 
-		: s(s), len(len), t{hfalse}, bm(len), dict(dict) {}
+	table(const sig& sg, size_t l, const dict_t& d) 
+		: s(sg), len(l), tq{hfalse}, bm(l), dict(d) {}
 };
 
 struct form;
 
 class tables {
 	friend struct iterbdds;
-	//friend struct iterbdds_slow;
 	friend std::ostream& operator<<(std::ostream& os, const tables& tbl);
 	friend std::istream& operator>>(std::istream& is, tables& tbl);
 public:
 	typedef std::function<void(const raw_term&)> rt_printer;
+
+	bool populate_tml_update = false;
+	bool print_updates = false;
+	bool print_steps = false;
+
 private:
 	typedef std::function<void(const term&)> cb_decompress;
 	std::set<body*, ptrcmp<body>> bodies;
@@ -194,15 +204,15 @@ private:
 	std::map<ntable, std::set<ntable>> deps;
 	std::map<ntable, std::set<tbl_alt>> tblbodies;
 	std::map<ntable, std::set<term>> mhits;
-	// D: Q: similar to deps but this is just immediate rule(tbl) dependency?
-	//std::map<ntable, std::set<ntable>> depends;
-	//std::map<ntable, std::set<ntable>> bodytbls;
 
 	std::map<tbl_arg, std::set<alt_arg>> minvtyps;
 	std::map<alt_arg, tbl_arg> mtyps;
-	//std::map<tbl_arg, bitsmeta*> maltbits;
 	// this is is auto typed info for pre-processing 
 	std::map<tbl_alt, alt> altstyped;
+	// enumerates alts as they come, initially local, it needs to be here
+	// we need to support multiple progs and transform/after
+	std::map<ntable, size_t> altids4types;
+	std::map<ntable, size_t> altids;
 
 	// this is the real alts type info, used for post-processing e.g. addbit
 	std::map<tbl_alt, alt*> altsmap;
@@ -210,17 +220,16 @@ private:
 	std::map<ntable, std::set<size_t>> tblrules;
 	// maps types (pre) ordering to (post) rules ordering (sorting is different)
 	std::map<tbl_alt, tbl_alt> altordermap;
-	//// maps alt to a vector pos in 'rules'
-	//std::map<tbl_alt, size_t> altrule; 
-	//// maps a vector pos in 'rules' w alts (tbl_arg could be size_t also)
-	//std::vector<std::vector<tbl_alt>> rulealts;
 
-	//int_t syms = 0, nums = 0, chars = 0;
-	//size_t bits = 2;
-	dict_t dict; // dict_t& dict;
+	// D: reintroducing these just to init grammar/dyck/load_strings properly.
+	// _nums is only used to get/check that initial universe (for str_rels tbls)
+	int_t _syms = 0, _nums = 0, _chars = 0;
+	size_t _bits = 2;
+
+	dict_t dict;
 	bool bproof, datalog, optimize, unsat = false, bcqc = true,
-		bin_transform = false, print_transformed, autotype = true, dumptype,
-		testaddbit;
+		 bin_transform = false, print_transformed, autotype = true, dumptype,
+		 testaddbit;
 
 	size_t max_args = 0;
 	std::map<std::array<int_t, 6>, spbdd_handle> range_memo;
@@ -231,7 +240,10 @@ private:
 	std::set<ntable> exts; // extensional
 	strs_t strs;
 	std::set<int_t> str_rels;
+	flat_prog prog_after_fp; // prog to run after a fp (for cleaning nulls)
 	//	std::function<int_t(void)>* get_new_rel;
+
+	int_t rel_tml_update, sym_add, sym_del;
 
 	struct witness {
 		size_t rl, al;
@@ -256,6 +268,7 @@ private:
 	};
 
 	typedef std::vector<std::map<term, std::set<proof_elem>>> proof;
+
 	void print(std::wostream&, const proof_elem&);
 	void print(std::wostream&, const proof&);
 	void print(std::wostream&, const witness&);
@@ -265,10 +278,8 @@ private:
 	std::wostream& print(std::wostream& os, const term& h,
 		const std::set<term>& b) const;
 	std::wostream& print(std::wostream& os, const flat_prog& p) const;
+	std::wostream& print(std::wostream& os, const rule& r) const;
 
-	//alt get_alt(const std::vector<raw_term>&);
-	//void get_alt(
-	//	const term_set& al, const term& h, std::set<alt>& as, size_t altid);
 	void get_alt(
 		const term_set& al, const term& h, alt_set& as, size_t altid);
 	rule get_rule(const raw_rule&);
@@ -313,8 +324,6 @@ private:
 
 	void init_bits();
 	static permex permex_add_bit(ints poss, c_bitsmeta& bm, c_bitsmeta& altbm);
-	//static permex permex_add_bit(
-	//	ints vals, const varmap& vm, c_bitsmeta& bm, c_bitsmeta& altbm);
 	static perminfo add_bit_perm(bitsmeta& bm, size_t arg, size_t args);
 	static spbdd_handle add_bit(
 		spbdd_handle h, const perminfo& perm, size_t arg, size_t args);
@@ -346,8 +355,7 @@ private:
 	sig get_sig(const lexeme& rel, const ints& arity);
 
 	ntable add_table(sig s);
-	//static uints get_perm(const ints& vals, const varmap& m, 
-	//	const bitsmeta& tblbm, const bitsmeta& altbm);
+
 	static uints get_perm(
 		const ints& poss, const bitsmeta& tblbm, const bitsmeta& altbm);
 	uints get_perm(const term& t, const varmap& m, size_t len,
@@ -365,6 +373,13 @@ private:
 //	void align_vars(std::vector<term>& b) const;
 	spbdd_handle from_fact(const term& t);
 	term from_raw_term(const raw_term&, bool ishdr = false, size_t orderid = 0);
+	term to_tbl_term(sig s, ints t, argtypes types, ints nums, size_t nvars = 0,
+		bool neg = false, term::textype extype=term::REL, bool realrel = true,
+		lexeme rel=lexeme{0, 0}, t_arith_op arith_op = NOP, size_t orderid = 0);
+	term to_tbl_term(ntable tab, ints t, argtypes types, ints nums, 
+		size_t nvars = 0, bool neg = false, term::textype extype=term::REL,
+		lexeme rel=lexeme{0, 0}, t_arith_op arith_op = NOP, size_t orderid = 0);
+	
 	static permex deltail(const bitsmeta& abm, const bitsmeta& tblbm);
 	permex deltail(size_t args, size_t newargs,
 		const bitsmeta& abm, const bitsmeta& tblbm) const;
@@ -387,7 +402,6 @@ private:
 	void run_internal_prog(flat_prog p, std::set<term>& r, size_t nsteps=0);
 	ntable create_tmp_rel(size_t len);
 	void create_tmp_head(std::vector<term>& x);
-	void get_goals();
 	void print_env(const env& e, const rule& r) const;
 	void print_env(const env& e) const;
 	struct elem get_elem(int_t arg, const arg_type& type) const;
@@ -407,6 +421,7 @@ private:
 	void get_alt_types(const term& h, const term_set& al, size_t altid);
 	//void get_types(const std::map<term, std::set<term_set>>& m);
 	void get_types(const flat_prog& p);
+	bool equal_types(const table& tbl, const alt& a) const;
 	void get_rules(flat_prog m);
 	void get_facts(const flat_prog& m);
 	ntable get_table(const sig& s);
@@ -414,7 +429,10 @@ private:
 	void set_priorities(const flat_prog&);
 	ntable get_new_tab(int_t x, ints ar);
 	lexeme get_new_rel();
-	void load_string(lexeme rel, const std::wstring& s);
+	std::vector<ntable> init_string_tables(lexeme rel, const std::wstring& s);
+	void load_string(
+		lexeme rel, const std::wstring& s, const std::vector<ntable> tbls);
+	std::set<term> load_string(lexeme r, const std::wstring& s);
 	lexeme get_var_lexeme(int_t i);
 	void add_prog(flat_prog m, const std::vector<struct production>&,
 		bool mknums = false);
@@ -431,43 +449,63 @@ private:
 	ntable prog_add_rule(flat_prog& p, std::map<ntable, ntable>& r,
 		std::vector<term> x);
 
+	// tml_update population
+	void init_tml_update();
+	void add_tml_update(const term& rt, bool neg);
+	std::wostream& decompress_update(std::wostream& os, spbdd_handle& x,
+		const rule& r); // decompress for --print-updates and tml_update
+
 	bool from_raw_form(const raw_form_tree *rs, form *&froot);
 	bool to_pnf( form *&froot);
 
 	//-------------------------------------------------------------------------
 	//XXX: arithmetic support, work in progress
-	bool isalu_handler(const term& t, alt& a, spbdd_handle &leq);
+	bool isarith_handler(const term& t, alt& a, ntable tab, spbdd_handle &leq);
+	void set_constants(const term& t, alt& a, spbdd_handle &q, 
+		const bitsmeta& bm) const;
+	bitsmeta InitArithTypes(
+		const term& t, const alt& a, ntable tab, size_t args) const;
 	spbdd_handle leq_var(size_t arg1, size_t arg2, size_t args,
 		size_t bit, spbdd_handle x, const bitsmeta& bm) const;
 	spbdd_handle add_var_eq(size_t arg0, size_t arg1, size_t arg2, size_t args,
-		const bitsmeta& bm);
+		const bitsmeta& bm) const;
 	spbdd_handle full_addder_carry(size_t var0, size_t var1, size_t n_vars,
 		uint_t b, spbdd_handle r, const bitsmeta& bm) const;
 	spbdd_handle full_adder(size_t var0, size_t var1, size_t n_vars,
 		uint_t b, const bitsmeta& bm) const;
-	spbdd_handle shr_test(size_t var0, int_t n1, size_t var2,
-		size_t n_vars);
-	spbdd_handle shl(size_t var0, int_t n1, size_t var2,
-		size_t n_vars, const bitsmeta& bm);
-	spbdd_handle full_addder_carry_shift(size_t var0, size_t var1, size_t n_vars,
-		uint_t b, uint_t s, spbdd_handle r, const bitsmeta& bm) const;
-	spbdd_handle full_adder_shift(size_t var0, size_t var1, size_t n_vars,
-		uint_t b, uint_t s, const bitsmeta& bm) const;
-	spbdd_handle add_ite(size_t var0, size_t var1, size_t args, uint_t b,
-		uint_t s, const bitsmeta& bm);
-	spbdd_handle add_ite_init(size_t var0, size_t var1, size_t args, uint_t b,
-		uint_t s);
-	spbdd_handle add_ite_carry(size_t var0, size_t var1, size_t args, uint_t b,
-		uint_t s, const bitsmeta& bm);
-	spbdd_handle mul_var_eq(size_t var0, size_t var1, size_t var2,
-				size_t n_vars);
-	spbdd_handle mul_var_eq_ext(size_t var0, size_t var1, size_t var2,
-		size_t var3, size_t n_vars);
-	spbdd_handle bdd_test(size_t n_vars);
-	spbdd_handle bdd_add_test(size_t n_vars);
-	spbdd_handle bdd_mult_test(size_t n_vars);
+	//spbdd_handle shr(size_t var0, size_t n1, size_t var2, size_t n_vars);
+	//spbdd_handle shl(size_t var0, size_t n1, size_t var2, size_t n_vars, 
+	//	const bitsmeta& bm);
+	//spbdd_handle full_addder_carry_shift(size_t var0, size_t var1, size_t n_vars,
+	//	uint_t b, uint_t s, spbdd_handle r, const bitsmeta& bm) const;
+	//spbdd_handle full_adder_shift(size_t var0, size_t var1, size_t n_vars,
+	//	uint_t b, uint_t s, const bitsmeta& bm) const;
+	//spbdd_handle add_ite(size_t var0, size_t var1, size_t args, uint_t b,
+	//	uint_t s, const bitsmeta& bm);
+	//spbdd_handle add_ite_init(size_t var0, size_t var1, size_t args, uint_t b,
+	//	uint_t s);
+	//spbdd_handle add_ite_carry(size_t var0, size_t var1, size_t args, uint_t b,
+	//	uint_t s, const bitsmeta& bm);
+	//spbdd_handle mul_var_eq(size_t var0, size_t var1, size_t var2,
+	//			size_t n_vars);
+	//spbdd_handle mul_var_eq_ext(size_t var0, size_t var1, size_t var2,
+	//	size_t var3, size_t n_vars);
+	//spbdd_handle bdd_test(size_t n_vars);
+	//spbdd_handle bdd_add_test(size_t n_vars);
+	//spbdd_handle bdd_mult_test(size_t n_vars);
 	uints get_perm_ext(const term& t, const varmap& m, size_t len, 
 		const bitsmeta& tblbm, const bitsmeta& abm) const;
+
+	//spbdd_handle ex_typebits(size_t in_varid, spbdd_handle in, size_t n_vars);
+	//spbdd_handle perm_from_to(size_t from, size_t to, spbdd_handle in, size_t n_bits, size_t n_vars);
+	//spbdd_handle perm_bit_reverse(spbdd_handle in,  size_t n_bits, size_t n_vars);
+	//spbdd_handle bitwise_handler(size_t in0_varid, size_t in1_varid, size_t out_varid,
+	//		spbdd_handle in0, spbdd_handle in1, size_t n_vars, t_arith_op op);
+	//spbdd_handle pairwise_handler(size_t in0_varid, size_t in1_varid, size_t out_varid,
+	//		spbdd_handle in0, spbdd_handle in1, size_t n_vars, t_arith_op op);
+
+	//t_arith_op get_bwop(lexeme l);
+	//t_arith_op get_pwop(lexeme l);
 
 public:
 	tables(dict_t dict, bool bproof = false, bool optimize = true,
@@ -486,7 +524,10 @@ public:
 	void out(emscripten::val o) const;
 #endif
 	void set_proof(bool v) { bproof = v; }
+	bool get_goals(std::wostream& os);
 	dict_t& get_dict() { return dict; }
+
+	std::wostream& print_dict(std::wostream& os) const;
 };
 
 struct transformer;

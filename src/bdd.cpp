@@ -560,15 +560,16 @@ wostream& bdd::stats(wostream& os) {
 		" AM: " << AM.size() << " C: "<< C.size();
 }
 
-void bdd::cleanpermcache() {
-	memos_perm_ex.clear();
-	//CX.clear();
-	//AMX.clear();
-	memos_ex.clear();
-	//CXP.clear();
-	//AMXP.clear();
-	memos_perm.clear();
-}
+//void bdd::cleanpermcache() {
+//	memos_perm_ex.clear();
+//	//CX.clear();
+//	//AMX.clear();
+//	memos_ex.clear();
+//	//CXP.clear();
+//	//AMXP.clear();
+//	memos_perm.clear();
+//}
+
 void bdd::gc() {
 	S.clear();
 	for (auto x : bdd_handle::M) mark_all(x.first);
@@ -819,7 +820,8 @@ spbdd_handle bdd_or_many(bdd_handles v) {
 	return bdd_handle::get(-bdd::bdd_and_many(move(b)));*/
 }
 
-#pragma region sat count
+#define SATCOUNT
+#ifdef SATCOUNT
 
 size_t bdd::satcount_perm(int_t x, size_t leafvar) {
 	const bdd bx = get(x);
@@ -850,26 +852,33 @@ size_t bdd::getvar(int_t h, int_t l, int_t v, int_t x, size_t maxv) {
 	return maxv;
 }
 
-// D: this version does a manual 'permute' to align vars (1,2,...)
+// D: this version does a manual 'permute' (in place alligns vars)
 // works better with rule(?x ?y ?out) :- headers
-size_t bdd::satcount(int_t x) {
+// could be buggy (when bdd is minimized, vars removed, we're only guessing)
+size_t bdd::satcount_k(int_t x, const bools& ex, const uints&) {
 	const bdd bx = get(x);
 	ourvars.clear();
 	size_t leafvar = getvar(bx.h, bx.l, bx.v, x, 0) + 1;
 
+	// this's what's missing, if size is smaller means we don't have the 0-var,
+	// but this might be correct or not, we might be missing one in the middle?
+	size_t k = 1;
+	size_t n = count_if(ex.begin(), ex.end(), [](bool isex) { return !isex; });
+	if (ourvars.size() < n)
+		k = 1 << (n - ourvars.size());
+
 	map<int_t, int_t> inv;
 	int_t ivar = 1;
 	for (auto x : ourvars) {
-		//wcout << L"satcount: inv: " << x << L", " << ivar << L" ." << endl;
+		//o::dbg() << L"satcount: inv: " << x << L", " << ivar << L" ." << endl;
 		inv.emplace(x, ivar++);
 	}
 	leafvar = ivar;
 
-	return satcount(bx, x, leafvar, inv);
+	return k * satcount_k(bx, x, leafvar, inv);
 }
 
-// TODO: optimize/cache, on multiple calls/static, or similar/diff/patterns?
-size_t bdd::satcount(const bdd& bx, int_t x, size_t leafvar,
+size_t bdd::satcount_k(const bdd& bx, int_t x, size_t leafvar,
 	map<int_t, int_t>& mapvars) {
 	size_t r = 0;
 	if (leaf(x)) {
@@ -878,15 +887,47 @@ size_t bdd::satcount(const bdd& bx, int_t x, size_t leafvar,
 	const bdd bhi = get(bx.h), blo = get(bx.l);
 	int_t hivar = leaf(bx.h) ? leafvar : mapvars.at(bhi.v); // nvars + 1 - bx.v
 	int_t lovar = leaf(bx.l) ? leafvar : mapvars.at(blo.v);
-	r += satcount(bhi, bx.h, leafvar, mapvars) *
+	r += satcount_k(bhi, bx.h, leafvar, mapvars) *
 		(1 << (hivar - mapvars.at(bx.v) - 1));
-	r += satcount(blo, bx.l, leafvar, mapvars) *
+	r += satcount_k(blo, bx.l, leafvar, mapvars) *
 		(1 << (lovar - mapvars.at(bx.v) - 1));
 	return r;
 }
 
-#pragma endregion
+size_t bdd::satcount(spbdd_handle x, const bools& inv) {
+	// see: body::init_perm_inv(args)
+	// only count alt vars that are 'possible permutes' (of a body bit) 
+	// all other var/const bits are inconsequential for this count
+	// (so we 'zero' them all to always be the same)
+	// i.e. these are bits possibly 'affected' by this body's bdd
+	// TODO: is it still possible that
+	// a) those bits are affected by something else, not body's bdd?
+	// b) other (unlisted) bits are affected via some bdd conversion?
 
+	return satcount_iter(x, inv.size(), inv).count();
+}
+
+void satcount_iter::sat(int_t x) {
+	if (x == F) return;
+	const bdd bx = bdd::get(x);
+	if (!bdd::leaf(x) && v < bdd::var(x)) {
+		DBG(assert(bdd::var(x) <= nvars);)
+			p[++v - 2] = true, sat(x), p[v - 2] = false, sat(x), --v;
+	}
+	else if (v != nvars + 1)
+		p[++v - 2] = true, sat(bx.h),
+		p[v - 2] = false, sat(bx.l), --v;
+	else { 
+		//f(p, x); 
+		DBG(assert(abs(x) == 1););
+		bools np(p.size());
+		for (size_t i = 0; i < p.size(); ++i)
+			np[i] = !inv[i] ? true : p[i];
+		vp.insert(np);
+	}
+}
+
+#endif
 
 void bdd::sat(uint_t v, uint_t nvars, int_t t, bools& p, vbools& r) {
 	if (t == F) return;
@@ -913,6 +954,9 @@ void allsat_cb::sat(int_t x) {
 	if (x == F) return;
 	const bdd bx = bdd::get(x);
 	if (!bdd::leaf(x) && v < bdd::var(x)) {
+		if (bdd::var(x) > nvars) {
+			//return;
+		}
 		DBG(assert(bdd::var(x) <= nvars);)
 		p[++v-2] = true, sat(x), p[v-2] = false, sat(x), --v;
 	} else if (v != nvars + 1)
@@ -1026,6 +1070,20 @@ spbdd_handle from_bit(uint_t b, bool v) {
 
 spbdd_handle from_eq(uint_t x, uint_t y) {
 	return bdd_ite(from_bit(x,true), from_bit(y,true), from_bit(y,false));
+}
+
+bool bdd::solve(int_t x, int_t v, int_t& l, int_t& h) {
+	bools b(v, false);
+	b[v-1] = true;
+	int_t r = bdd_or( l = bdd_and_ex(x, from_bit(v, true), b),
+			-(h = -bdd_and_ex(x, from_bit(v, true), b)));
+	return leaf(r) && !trueleaf(r);
+}
+
+array<spbdd_handle, 2> solve(spbdd_handle x, int_t v) {
+	int_t h, l;
+	if (!bdd::solve(x->b, v, h, l)) return { nullptr, nullptr };
+	return { bdd_handle::get(l), bdd_handle::get(h) };
 }
 
 void bdd::bdd_nvars(int_t x, set<int_t>& s) {

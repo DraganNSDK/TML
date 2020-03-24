@@ -33,17 +33,22 @@ struct raw_prog;
 
 bool operator==(const lexeme& x, const lexeme& y);
 
-static const std::set<std::wstring> str_bltins =
-	{ L"alpha", L"alnum", L"digit", L"space", L"printable", L"count",
-		L"rnd", L"print", L"lprint", L"halt", L"fail" };
+//static const std::set<std::wstring> str_bltins =
+//	{ L"alpha", L"alnum", L"digit", L"space", L"printable", L"count",
+//		L"rnd", L"print", L"lprint", L"halt", L"fail",
+//		L"bw_and", L"bw_or", L"bw_xor", L"bw_not", L"pw_add", L"pw_mult"};
+static const std::set<std::wstring> str_bltins = {
+	L"count", L"rnd", L"print", L"lprint", L"halt", L"fail",
+	L"bw_and", L"bw_or", L"bw_xor", L"bw_not", L"pw_add", L"pw_mult"
+};
 
 struct elem {
 	enum etype {
 		NONE, SYM, NUM, CHR, VAR, OPENP, CLOSEP, ALT, STR, EQ, NEQ, LEQ, GT, LT,
 		GEQ, BLTIN, NOT, AND, OR, FORALL, EXISTS, UNIQUE, IMPLIES, COIMPLIES,
-		ALU, ARGTYP
+		ARITH, ARGTYP
 	} type;
-	t_alu_op alu_op = NOP;
+	t_arith_op arith_op = NOP;
 	int_t num = 0;
 	lexeme e;
 	wchar_t ch;
@@ -83,9 +88,9 @@ struct elem {
 struct raw_term {
 	// TODO: enum 'is...' stuff
 	bool neg = false;
-	//bool iseq = false, isleq = false, islt = false, isbltin = false, isalu = false;
-	enum rtextype { REL, EQ, LEQ, BLTIN, ALU } extype = raw_term::REL;
-	t_alu_op alu_op = NOP;
+	//bool iseq = false, isleq = false, islt = false, isbltin = false;
+	enum rtextype { REL, EQ, LEQ, BLTIN, ARITH } extype = raw_term::REL;
+	t_arith_op arith_op = NOP;
 	std::vector<elem> e;
 	ints arity;
 	size_t nargs = 0; // total count of args (useful for types handling later).
@@ -97,7 +102,6 @@ struct raw_term {
 		return neg == t.neg && e == t.e && arity == t.arity &&
 			extype == t.extype;
 			//iseq == t.iseq && isleq == t.isleq && islt == t.islt;
-			//isalu == t.isalu;
 		//return neg == t.neg && e == t.e && arity == t.arity;
 	}
 };
@@ -205,7 +209,6 @@ struct raw_prog {
 	std::vector<directive> d;
 	std::vector<production> g;
 	std::vector<raw_rule> r;
-	//dict_t dict;
 	std::set<lexeme, lexcmp> builtins;
 //	int_t delrel = -1;
 	bool parse(const lexemes& l, size_t& pos);
@@ -214,14 +217,6 @@ struct raw_prog {
 struct raw_progs {
 	std::vector<raw_prog> p;
 	raw_progs();
-	//raw_progs(FILE*);
-	//raw_progs(const std::wstring& s = L"");
-	//raw_progs(raw_progs&& progs) {
-	//	for (raw_prog& rp : progs.p) {
-	//		p.push_back(std::move(rp));
-	//	}
-	//	progs.p.clear();
-	//}
 	void parse(const std::wstring& s, dict_t& dict, bool newseq = true);
 };
 

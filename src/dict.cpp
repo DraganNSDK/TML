@@ -38,16 +38,7 @@ lexeme get_lexeme(const wstring& s) {
 }
 
 lexeme dict_t::get_sym(int_t t) const {
-	return syms[un_mknum(t)]; //t>>2
-	// un_mknum(arg);
-	//if ((t & 1) || (t & 2) || syms.size() <= (size_t)(t >> 2))
-	//	return ::get_lexeme(L"???");
-	//DBG(assert(!(t&1) && !(t&2) && syms.size()>(size_t)(t>>2));)
-	//static wchar_t str_nums[20], str_chr[] = L"'a'";
-	//if (t & 1) { str_chr[1] = t>>=2; return { str_chr, str_chr + 3 }; }
-	//if (t & 2) return wcscpy(str_nums, to_wstring(t>>=2).c_str()),
-	//		lexeme{ str_nums, str_nums + wcslen(str_nums) };
-	//return syms[t>>2];
+	return syms[un_mknum(t)];
 }
 
 int_t dict_t::get_fresh_var(int_t old) {
@@ -84,8 +75,7 @@ int_t dict_t::get_rel(const lexeme& l) {
 int_t dict_t::get_sym(const lexeme& l) {
 	auto it = syms_dict.find(l);
 	if (it != syms_dict.end()) return it->second;
-	return syms.push_back(l), syms_dict[l] = mksym(syms.size()-1); 
-	// (syms.size()-1)<<2;
+	return syms.push_back(l), syms_dict[l] = mksym(syms.size()-1);
 }
 
 int_t dict_t::get_bltin(const lexeme& l) {
@@ -101,8 +91,28 @@ bool equals(cws l0, cws l1, cws s) {
 	return (size_t)(l1 - l0) != n ? false : !wcsncmp(l0, s, n);
 }
 
+size_t get_index(const lexeme& l) {
+	if (*l[0] != L'[') parse_error(err_eof, l);
+	if ((size_t)(l[1] - l[0]) < 3) parse_error(err_eof, l); // [0]
+	cws fst = l[0], snd = fst+1, esnd = nullptr;
+	while (*++fst && fst != l[1]) {
+		if (esnd != nullptr) { // chars after ], not allowed
+			parse_error(err_eof, l);
+			break;
+		}
+		if (*fst == L']') esnd = fst;
+	}
+	if (!esnd) parse_error(err_eof, l); // has [ but no ]
+	return size_t(get_int_t(snd, esnd)); // TODO: default bitness?
+}
+
 // use dict just to store type strings, avoid duplicate parsing.
 int_t dict_t::get_type(const lexeme& l) {
+	size_t nums;
+	return get_type(l, nums);
+}
+int_t dict_t::get_type(const lexeme& l, size_t& nums) {
+	nums = 0;
 	if (*l[0] != L':') parse_error(err_eof, l);
 	auto it = types_dict.find(l);
 	if (it != types_dict.end()) return it->second;
@@ -110,7 +120,8 @@ int_t dict_t::get_type(const lexeme& l) {
 	cws fst = l[0], efst = nullptr, snd = nullptr, esnd = nullptr;
 	while (*++fst && fst != l[1]) {
 		if (esnd != nullptr) { // chars after ], not allowed
-			parse_error(err_eof, l);
+			nums = get_index(lexeme{ esnd+1, l[1]});
+			//parse_error(err_eof, l);
 			break;
 		}
 		if (*fst == L'[') efst = fst; // snd = fst + 1;
@@ -131,21 +142,7 @@ int_t dict_t::get_type(const lexeme& l) {
 
 	types.emplace_back(type, bits); // , fst, efst, snd, esnd);
 	return types_dict[l] = types.size() - 1;
-
-	//lexeme etype, ebits;
-	//if (efst == nullptr) etype = lexeme{ l[0] + 1, l[1] }, ebits = { 0,0 };
-	//else if (esnd == nullptr) etype = lexeme{ l[0] + 1, efst }, ebits = { 0,0 };
-	//else etype = lexeme{ l[0] + 1, efst }, ebits = lexeme{ efst+1, esnd };
-	//types.emplace_back(ttype::INT, 10, etype, ebits);
-	////types.emplace_back(ttype::INT, 10, l);
-	//return types_dict[l] = types.size() - 1;
 }
-
-//int_t dict_t::get_type(ttype::basetype type, int_t bits) {
-//	cws fst = nullptr, efst = nullptr, snd = nullptr, esnd = nullptr;
-//	types.emplace_back(type, bits, fst, efst, snd, esnd);
-//	return types_dict[l] = types.size() - 1;
-//}
 
 lexeme dict_t::get_lexeme(const wstring& s) {
 	cws w = s.c_str();

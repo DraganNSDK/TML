@@ -56,7 +56,7 @@ struct iterbdds {
 	}
 
 	alt* get_alt(const tbl_alt& talt) const;
-	void permute_type(const tbl_arg& intype);
+	void permute_type(const tbl_arg& intype, size_t addbits = 1);
 	bool permute_table(ntable tab, size_t arg);
 	bool permute_table(const tbl_arg& targ, size_t bits, base_type type);
 	bool permute_table(ntable tab, size_t arg, size_t bits, base_type type) {

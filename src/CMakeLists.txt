@@ -16,6 +16,7 @@ include(tml-common)
 
 set(TML_HEADERS
 	TML.h
+	async_reader.h
 	bdd.h
 	bitsmeta.h
 	defs.h
@@ -29,6 +30,7 @@ set(TML_HEADERS
 	output.h
 	repl.h
 	tables.h
+	udp.h
 )
 
 set(TML_SOURCES
@@ -70,6 +72,10 @@ set(TML_COMPILE_OPTIONS
 )
 set(TML_LINK_OPTIONS ${TML_PGO_OPTIONS})
 
+# pthreads
+###########
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
 
 # object library
 #################
@@ -79,6 +85,9 @@ target_setup(TMLo)
 target_compile_options(TMLo     PRIVATE ${TML_COMPILE_OPTIONS} -fPIC)
 target_link_options(TMLo        PRIVATE ${TML_LINK_OPTIONS})
 target_sources(TMLo             PRIVATE ${TML_SOURCES} ${TML_HEADERS})
+target_link_libraries(TMLo
+		${CMAKE_THREAD_LIBS_INIT}
+		)
 target_include_directories(TMLo PUBLIC
 	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
@@ -126,7 +135,7 @@ target_setup(tml)
 target_compile_options(tml PRIVATE ${TML_COMPILE_OPTIONS})
 target_link_options(tml    PRIVATE ${TML_LINK_OPTIONS})
 target_sources(tml         PRIVATE main.cpp)
-target_link_libraries(tml  TMLs)
+target_link_libraries(tml  TMLs Threads::Threads)
 
 
 # executable using shared library
@@ -137,7 +146,7 @@ target_setup(tml_shared)
 target_compile_options(tml_shared PRIVATE ${TML_COMPILE_OPTIONS})
 target_link_options(tml_shared    PRIVATE ${TML_LINK_OPTIONS})
 target_sources(tml_shared         PRIVATE main.cpp)
-target_link_libraries(tml_shared  TMLso)
+target_link_libraries(tml_shared  TMLso Threads::Threads)
 exclude(tml_shared)
 
 

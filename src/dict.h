@@ -62,45 +62,24 @@ public:
 	int_t get_sym(const lexeme& l);
 	int_t get_bltin(const lexeme& l);
 	int_t get_type(const lexeme& l);
+	int_t get_type(const lexeme& l, size_t& nums);
 	int_t get_fresh_sym( int_t old);
 	int_t get_fresh_var( int_t old);
 	lexeme get_lexeme(const std::wstring& s);
 	lexeme make_lexeme(const std::wstring& s) const;
+	int_t get_sym(const std::wstring& s) { return get_sym(get_lexeme(s)); }
 	int_t get_rel(const std::wstring& s) { return get_rel(get_lexeme(s)); }
 	int_t get_bltin(const std::wstring& s) { return get_bltin(get_lexeme(s)); }
 	int_t get_type(const std::wstring& s) { return get_type(get_lexeme(s)); }
 	const arg_type& get_type_info(const lexeme& l)
 	{ return get_type(get_type(l)); }
+	const arg_type& get_type_info(const lexeme& l, size_t& nums)
+	{ return get_type(get_type(l, nums)); }
 	size_t nsyms() const { return syms.size(); }
 	size_t nvars() const { return vars_dict.size(); }
 	size_t nrels() const { return rels.size(); }
 	size_t nbltins() const { return bltins.size(); }
 	size_t ntypes() const { return types.size(); }
-
-	//dict_t& operator=(const dict_t& d) {
-	//	// we should do copy and swap instead (utilize move), no ref
-	//	strs_extra.clear();
-	//	for (const lexeme& c : d.strs_extra) {
-	//		wstr r = wcsdup((wstr)c[0]);
-	//		size_t s = wcslen(r);
-	//		lexeme l = { r, r + s };
-	//		strs_extra.insert(l);
-	//	}
-	//	return 
-	//		syms_dict = d.syms_dict, 
-	//		vars_dict = d.vars_dict,
-	//		rels_dict = d.rels_dict, 
-	//		bltins_dict = d.bltins_dict, 
-	//		syms = d.syms,
-	//		rels = d.rels, 
-	//		bltins = d.bltins, 
-	//		//strs_extra = d.strs_extra, 
-	//		op = d.op, 
-	//		cl = d.cl, 
-	//		types_dict = d.types_dict, 
-	//		types = d.types,
-	//		*this;
-	//}
 	// copy and swap (utilize move)
 	dict_t& operator=(dict_t d) {
 		using std::swap;
@@ -122,4 +101,7 @@ public:
 	}
 	~dict_t();
 };
+
+std::wostream& operator<<(std::wostream& os, const dict_t& d);
+
 #endif // __DICT_H__

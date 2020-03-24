@@ -93,19 +93,34 @@ using namespace std;
 // - or we've just done alts, go through all bodies now, 
 //   use alts' perms if available (from cache), if not just null it.
 
-void iterbdds::permute_type(const tbl_arg& intype) {
+void iterbdds::permute_type(const tbl_arg& intype, size_t addbits) {
+	// we don't yet support more than 1 bit at the time
+	DBG(assert(addbits == 1););
+	DBG(assert(intype.tab != -1););
+
+	// check input, as it could be anything really, other types below are fine
+	if (tbls.size() <= size_t(intype.tab) ||
+		tbls[intype.tab].len <= intype.arg || 
+		tbls[intype.tab].bm.get_args() <= intype.arg)
+		return; // or error?
+
+	wcout << L"increasing universe / bitness (tbl:0, arg:0):" << endl;
+	wcout << L"from:\t" << tbls[intype.tab].bm.get_bits(intype.arg) << endl;
+
 	tbl_arg type = get_root_type(intype);
+	//if (type != intype) {}
+	set<alt_arg>& types = minvtyps[type];
+	if (types.empty()) {
+		// we actually have just that one type to process, so do that...
+		types.insert(type); // could happen, 'types' w/o references
+	}
+	DBG(assert(has(types, alt_arg{type}));); // make sure we have 'self'
+	// make sure we have the in type as well (it should be under the root type)
+	DBG(assert(type == intype || has(types, alt_arg{intype})););
+
 	auto& bm = tbls[type.tab].bm;
 	size_t bits = bm.types[type.arg].bitness + 1;
 	base_type bitype = bm.types[type.arg].type;
-	if (type != intype) {
-	}
-	//DBG(assert(has(minvtyps, type)););
-	set<alt_arg>& types = minvtyps[type];
-	DBG(assert(has(types, alt_arg{type}));); // make sure we have 'self'
-	//DBG(assert(has(types, alt_arg{ type }));); // make sure self is first?
-	// make sure we have the in type as well (it should be under the root type)
-	DBG(assert(type == intype || has(types, alt_arg{intype})););
 	// first, process all tables, prepare tbls cache...
 	for (const alt_arg& atype : types) {
 		if (atype.alt != -1) continue;
@@ -140,6 +155,7 @@ void iterbdds::permute_type(const tbl_arg& intype) {
 			//	rl = add_bit(rl, info, arg, len);
 		}
 	}
+
 	// now process alts...
 	for (const alt_arg& atype : types) {
 		if (atype.alt == -1) continue;
@@ -188,6 +204,7 @@ void iterbdds::permute_type(const tbl_arg& intype) {
 		// or do this to imitate alt_query
 		//a.rlast = bdd_and_many_ex_perm(a.last, a.ex, a.perm);
 	}
+
 	// now go through bodies as we need all tbls and alts to be done (bms/perms)
 	for (const alt_arg& atype : types) {
 		if (atype.alt != -1) continue;
@@ -215,6 +232,7 @@ void iterbdds::permute_type(const tbl_arg& intype) {
 		}
 	}
 
+	wcout << L"to:  \t" << tbls[intype.tab].bm.get_bits(intype.arg) << endl;
 }
 
 alt* iterbdds::get_alt(const tbl_alt& talt) const {
@@ -251,7 +269,7 @@ bool iterbdds::permute_table(const tbl_arg& targ, size_t bits, base_type type) {
 	tblargperms[targ] = info; // {tab, arg}
 	//tdone.insert(targ);
 	tb.bm = info.bm;
-	tb.t = add_bit(tb.t, info, arg, tb.len);
+	tb.tq = add_bit(tb.tq, info, arg, tb.len);
 	// add/del should be "table's" though not entirely clear (but mixes w/ t)
 	for (spbdd_handle& tadd : tb.add)
 		tadd = add_bit(tadd, info, arg, tb.len);
@@ -269,12 +287,13 @@ bool iterbdds::permute_table(const tbl_arg& targ, size_t bits, base_type type) {
 bool iterbdds::permute_bodies(const tbl_arg& targ, const bits_perm& p, alt& a, 
 	size_t bits, base_type type)
 {
-	ntable tab = targ.tab;
-	size_t arg = targ.arg;
+	DBG(assert(targ.tab == p.tab && targ.arg == p.arg););
+	//ntable tab = targ.tab;
+	//size_t arg = targ.arg;
 	for (size_t n = 0; n != a.size(); ++n) {
 		DBG(assert(a[n] != nullptr););
 		body& b = *a[n];
-		if (b.tab == tab) {
+		if (b.tab == p.tab) {
 			//wcout << L"processing body: \t" << targ << L"," << b.vals << endl;
 			// permute body bdd-s (eq, last...)
 			DBG(assert(p.perm.bm.get_bits(p.arg) == bits););
@@ -315,22 +334,22 @@ bool iterbdds::permute_bodies(const tbl_arg& targ, const bits_perm& p, alt& a,
 			b.perm = pex.second;
 
 			// TODO: make the final alt permute & we can do this, otherwise null
-			//b.tlast = add_bit(b.tlast, p.perm, p.arg, p.args);
-			//// rlast is alt-based, not tbl-based, the right way, using alt perm
-			//b.rlast = add_bit(b.rlast, altp.perm, altp.arg, altp.args);
+			////b.tlast = add_bit(b.tlast, p.perm, p.arg, p.args);
+			// rlast is alt-based, not tbl-based, the right way, using alt perm
+			////b.rlast = add_bit(b.rlast, altp.perm, altp.arg, altp.args);
 			// tlast and rlast need to be in sync, and rlast is wrong, needs alt
 			// this resets next body_query, same as below
-			//b.tlast = nullptr;
+			////b.tlast = nullptr;
 
 			// D: should we do body_query here again? everything changed e.g.
 			// fix: this is actually required, some pos/bits ordering just won't
 			// work otherwise
-			//if (b.tlast && b.tlast->b == tbls[b.tab].t->b) {} else 
-			{
-				b.tlast = tbls[b.tab].t;
-				b.rlast = (b.neg ? bdd_and_not_ex_perm : bdd_and_ex_perm)
-					(b.q, tbls[b.tab].t, b.ex, b.perm);
-			}
+			////if (b.tlast && b.tlast->b == tbls[b.tab].tq->b) {} else 
+			//{
+			//	b.tlast = tbls[b.tab].tq;
+			//	b.rlast = (b.neg ? bdd_and_not_ex_perm : bdd_and_ex_perm)
+			//		(b.q, tbls[b.tab].tq, b.ex, b.perm);
+			//}
 		}
 	}
 	return true;

@@ -61,6 +61,16 @@ void options::parse(wstrings wargs, bool internal) {
 	}
 }
 
+template <typename T>
+void options::set(const wstring &name, T val) {
+	option o;
+	if (!get(name, o)) return;
+	o.v.set(val);
+	set(name, o);
+}
+void options::enable (const wstring &name) { set(name, true ); }
+void options::disable(const wstring &name) { set(name, false); }
+
 bool options::enabled(const wstring &name) const {
 	option o;
 	if (!get(name, o)) return false;
@@ -114,6 +124,8 @@ done:
 }
 
 #define add_bool(n,desc) add(option(option::type::BOOL, {n}).description(desc))
+#define add_bool2(n1,n2,desc) add(option(option::type::BOOL, \
+		{(n1),(n2)}).description(desc))
 #define add_output(n,desc) add(option(option::type::STRING, {n}, \
 		[](const option::value& v) { \
 			output::set_target(n,v.get_string()); \
@@ -157,12 +169,32 @@ void options::setup() {
 		[this](const option::value& v) {
 			add_input_data(v.get_string());
 		}).description(L"input string to evaluate"));
+
+	add_bool(L"udp",     L"open REPL on udp socket");
+	add(option(option::type::STRING, {L"udp-addr", L"ua"})
+		.description(L"IP address (udp)"));
+	add(option(option::type::INT, { L"udp-port", L"up" })
+		.description(L"port (udp)"));
+
 	add_bool(L"sdt",     L"sdt transformation");
 	add_bool(L"bin",     L"bin transformation");
 	add_bool(L"proof",   L"extract proof");
 	add_bool(L"repl",    L"run TML in REPL mode");
 	add_bool(L"run",     L"run program     (enabled by default)");
 	add_bool(L"csv",     L"save result into CSV files");
+
+	add(option(option::type::INT, { L"steps", L"s" })
+		.description(L"run N steps"));
+	add(option(option::type::INT, { L"break", L"b" })
+		.description(L"break on the N-th step"));
+	add_bool2(L"break-on-fp", L"bfp", L"break on a fixed point");
+
+	add_bool2(L"populate-tml_update", L"tml_update",
+		L"populates relation tml_update(N_step add|delete fact).");
+	add_bool2(L"print-steps", L"ps", L"print steps");
+	add_bool2(L"print-updates", L"pu", L"print updates");
+	add_bool2(L"print-dict", L"dict", L"print internal string dictionary");
+
 	add_bool(L"optimize",L"optimize and show more benchmarks");
 	add_bool(L"autotype",L"automatic prepare types, or off/optimize/manual");
 	add_bool(L"dumptype",L"dump all types for debug purposes");
@@ -188,6 +220,7 @@ void options::setup() {
 }
 
 #undef add_bool
+#undef add_bool2
 #undef add_output
 #undef add_output_alt
 
@@ -200,7 +233,9 @@ void options::init_defaults() {
 		L"--info",        L"@stderr",
 		L"--repl-output", L"@stdout",
 		L"--benchmarks",  L"@stdout",
-		L"--optimize"
+		L"--optimize",
+		L"--udp-addr",    L"127.0.0.1",
+		L"--udp-port",    L"6283"
 	}, true);
 	DBG(parse(wstrings{ L"--debug", L"@stderr" }, true);)
 }
