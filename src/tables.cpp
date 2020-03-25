@@ -108,7 +108,7 @@ spbdd_handle tables::leq_const(int_t c, size_t arg, size_t args, size_t b,
 	//		leq_const(c, arg, args, b, bits, bm));
 }
 
-typedef tuple<size_t, size_t, size_t, int_t> skmemo;
+typedef tuple<size_t, size_t, size_t, vector<size_t>> skmemo;
 typedef tuple<size_t, size_t, size_t, int_t> ekmemo;
 typedef tuple<int_t, size_t, size_t, int_t> ekcmemo;
 map<skmemo, spbdd_handle> smemo;
@@ -374,7 +374,11 @@ spbdd_handle tables::from_sym(
 	static skmemo x;
 	static map<skmemo, spbdd_handle>::const_iterator it;
 	size_t bits = bm.types[arg].bitness; // this is now 'bits' (per arg)
-	if ((it = smemo.find(x = { i, arg, args, bits })) != smemo.end())
+	// temp turn off to trace the universe/bdd issues
+	//if ((it = smemo.find(x = { i, arg, args, bits })) != smemo.end())
+	//	return it->second;
+	// fix: cache on full bits-vector not just arg bits as pos-s need to be same
+	if ((it = smemo.find(x = { i, arg, args, bm.vbits })) != smemo.end())
 		return it->second;
 	spbdd_handle r = htrue;
 	for (size_t b = 0; b != bits; ++b)
@@ -465,8 +469,8 @@ term tables::from_raw_term(const raw_term& r, bool isheader, size_t orderid) {
 					//	nums[t.size()-1] = num;
 				}
 				else // there's a bug with tight bits (dycks example), safe bits
-					types.emplace_back(base_type::CHR, 10); // chars = 255;
-					//types.emplace_back(base_type::CHR, 8); // chars = 255;
+					//types.emplace_back(base_type::CHR, 10); // chars = 255;
+					types.emplace_back(base_type::CHR, 8); // chars = 255;
 				break;
 			case elem::VAR:
 				t.push_back(dict.get_var(r.e[n].e));

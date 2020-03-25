@@ -49,7 +49,7 @@ void bitsmeta::init(const dict_t& dict) {
 					type.bitness = BitScanR(dict.nsyms()); // nsyms-1? I guess
 					// add extra because we haven't handled syms properly yet
 					// i.e. we have 'shared dict universe' for all sym/str args
-					type.bitness += 2; // ...will be removed
+					//type.bitness += 2; // ...will be removed
 				}
 				break;
 			case base_type::CHR:
@@ -57,7 +57,7 @@ void bitsmeta::init(const dict_t& dict) {
 				if (type.bitness == 0) {
 					type.bitness = 8;
 					// there's a bug with tight bits (dycks example), safe bits
-					type.bitness += 2; // ...will be removed
+					//type.bitness += 2; // ...will be removed
 				}
 				break;
 			case base_type::INT: 
@@ -65,7 +65,7 @@ void bitsmeta::init(const dict_t& dict) {
 					// calc bitness for ints (we just have nums at this point).
 					type.bitness = BitScanR(nums[i]); // un_mknum(args[i])
 					// there's a bug with tight bits (dycks example), safe bits
-					type.bitness += 2; // ...will be removed
+					//type.bitness += 2; // ...will be removed
 				}
 				break;
 			case base_type::NONE:
@@ -82,7 +82,9 @@ void bitsmeta::init(const dict_t& dict) {
 			lsum += types[vargs[i]].bitness;
 			mleftbits[vargs[i+1]] = lsum;
 		}
+		// vargs is redundant here as it's an aggregate, maxb/vbits will be same
 		maxb = max(maxb, types[vargs[i]].bitness);
+		vbits[vargs[i]] = types[vargs[i]].bitness;
 	}
 	args_bits = mleftbits.at(vargs[args-1]) + types[vargs[args-1]].bitness;
 	maxbits = maxb;
@@ -100,6 +102,7 @@ void bitsmeta::init(const dict_t& dict) {
 	DBG(assert(argsum == args_bits););
 }
 
+/* this's probably not necessary, just do init() when done w/ changes */
 void bitsmeta::init_cache() {
 	DBG(assert(!types.empty()););
 	size_t args = types.size(), lsum = 0, maxb = 0, argsum = 0;
@@ -111,6 +114,7 @@ void bitsmeta::init_cache() {
 		lsum += types[vargs[i]].bitness;
 		mleftbits[vargs[i+1]] = lsum;
 		maxb = std::max(maxb, types[vargs[i]].bitness);
+		vbits[vargs[i]] = types[vargs[i]].bitness;
 	}
 	args_bits = mleftbits.at(vargs[args-1]) + types[vargs[args-1]].bitness;
 	maxbits = std::max(maxb, types[vargs[args-1]].bitness);
@@ -165,6 +169,7 @@ bool bitsmeta::set_args(
 /* 
 we're init already, this is just to update table back from alt/rules 
 not entirely nice but handy to sync types in between tbls, rules, alts, for now
+(this is to be deprecated, not much use, just use init() on any change)
 */
 void bitsmeta::update_types(const argtypes& vtypes, const ints& vnums) {
 	DBG(assert(types.size() <= vtypes.size()););

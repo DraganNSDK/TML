@@ -27,7 +27,7 @@ struct bitsmeta {
 	argtypes types;
 	// D: we need to track exact 'nums' for the range leq (bits are not enough).
 	ints nums;
-	std::vector<size_t> vargs;
+	std::vector<size_t> vargs, vbits;
 	size_t nterms = 0; // D: # of terms/types processed so far.
 	size_t args_bits = 0; // like args * bits (just now variable sum)
 
@@ -37,8 +37,8 @@ struct bitsmeta {
 	std::map<size_t, std::map<size_t, size_t>> mleftargs;
 
 	bitsmeta() {}
-	bitsmeta(size_t len) 
-		: types(len), nums(len), vargs(len, 0), nterms{0}, args_bits{0} {
+	bitsmeta(size_t len) :
+		types(len), nums(len), vargs(len), vbits(len), nterms{0}, args_bits{0} {
 		for (size_t i = 0; i != len; ++i) vargs[i] = i; // native ordering
 	}
 	/* sort of a copy .ctor w/ bits changed (for one arg) - supports add_bit */
