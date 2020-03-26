@@ -167,6 +167,9 @@ bitsmeta tables::InitArithTypes(
 		//// this isn't tested! addbit works but only sporadic testing was done
 		//size_t resultarg = 2; // our result arg position
 		//size_t altretarg = a.vm.at(t[resultarg]); // just e.g.
+		//DBG(assert(altretarg < tbls[tab].len););
+		// TODO: make sure altretarg < tbls[tab].len (alt header var, not free)
+		// i.e. we can only permute/addbit to tbl bm arg bits, not alt/free vars
 		//size_t altretbits = 10;
 		//if (a.bm.types[altretarg].bitness < altretbits) {
 		//	DBG(assert(false);); // throw 0;

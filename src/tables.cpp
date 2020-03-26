@@ -109,8 +109,8 @@ spbdd_handle tables::leq_const(int_t c, size_t arg, size_t args, size_t b,
 }
 
 typedef tuple<size_t, size_t, size_t, vector<size_t>> skmemo;
-typedef tuple<size_t, size_t, size_t, int_t> ekmemo;
-typedef tuple<int_t, size_t, size_t, int_t> ekcmemo;
+typedef tuple<size_t, size_t, size_t, vector<size_t>> ekmemo;
+typedef tuple<int_t, size_t, size_t, vector<size_t>> ekcmemo;
 map<skmemo, spbdd_handle> smemo;
 map<ekmemo, spbdd_handle> ememo;
 map<ekmemo, spbdd_handle> leqmemo;
@@ -125,7 +125,10 @@ spbdd_handle tables::leq_var(size_t arg1, size_t arg2, size_t args,
 	// D: TODO: is this logic ok? we match bit by bit, if # bits differ => false
 	// or should we actually throw an error here?
 	if (bits != bits2) return hfalse;
-	if ((it = leqmemo.find(x = { arg1, arg2, args, bits })) != leqmemo.end())
+	//if ((it = leqmemo.find(x = { arg1, arg2, args, bits })) != leqmemo.end())
+	//	return it->second;
+	DBG(assert(!bm.vbits.empty() && bm.bitsfixed););
+	if ((it = leqmemo.find(x = { arg1, arg2, args, bm.vbits })) != leqmemo.end())
 		return it->second;
 	spbdd_handle r = leq_var(arg1, arg2, args, bits, bm);
 	return leqmemo.emplace(x, r), r;
@@ -335,20 +338,52 @@ spbdd_handle table::init_bits() { //table& tbl) {
 	spbdd_handle x = tq;
 	size_t args = len;
 	bm.init(dict);
+
 	// this below is completely useless, we'll overwrite w/ facts (if no facts?)
 
-	// D: no need to permute, we init all bits in one pass, we know arg bits. 
-	// (only in add_bit later, when enlarging universe, we'd need to permute)
-	// D: x is hfalse, then we have and_many, how is this working? ok w/o perm?
-	bdd_handles v = { x }; // ^ perm 
-	for (size_t arg = 0; arg != args; ++arg) {
-		size_t bits = bm.types[arg].bitness; // D: this is now 'bits' (per arg)
-		for (size_t b = 0; b != bits; ++b)
-			v.push_back(::from_bit(bm.pos(b, arg, args), false));
+	// this is for 2nd prog pass, if init and none changed, don't destroy .t
+	// problem is what if smth changed? we should only init added bits, keep .t
+	if (bm.bitsfixed) return tq;
+	//bm.bitsfixed = true;
+	vector<size_t> vbits = bm.vbits; // old vbits, to know which bits 2 add_bit
+	//bool isfullinit = vbits.empty();
+	bool isaddbit = !vbits.empty();
+	bm.init_bits();
+	// TODO: for the moment we support only full reset, all bits are cleared
+	// we should keep track of added bits (could be one or more)
+	// and do only those bits here + do the proper live / dynamic add_bit / perm
+	// this is important for tbls in between 2 progs (if changes) <- auto addbit
+
+	if (!isaddbit) {
+		// no need to permute, we init all bits in one pass, we know arg bits. 
+		// only in add_bit later, when enlarging universe, we'd need to permute
+		// x is hfalse, then we have and_many, how is this working? ok w/o perm?
+		bdd_handles v = { x }; // ^ perm 
+		for (size_t arg = 0; arg != args; ++arg) {
+			size_t bits = bm.types[arg].bitness; // this is now 'bits' (per arg)
+			for (size_t b = 0; b != bits; ++b)
+				v.push_back(::from_bit(bm.pos(b, arg, args), false));
+		}
+		// these bdd changes only 'stick' for table for rules that aren't facts. 
+		// (.t bdd gets 'eaten' by the get_rules/get_facts for facts tables)
+		return tq = bdd_and_many(move(v));
+	} else {
+		wcout << L"bits changed, addbit required, not implemented!" << endl;
+		for (size_t arg = 0; arg != args; ++arg) {
+			size_t addbits = bm.types[arg].bitness - vbits[arg];
+			if (addbits > 0) {
+				// forget about this, instead of this, scan all progs, and do 
+				// propagate_types on all
+				// issue: we already have bits set up, but addbit should do that
+				//	iterbdds bdditer(*this);
+				//	while (a.bm.types[altretarg].bitness < altretbits) {
+				//		bdditer.clear();
+				//		bdditer.permute_type({ tab, altretarg }, 1);
+				//	}
+			}
+		}
+		throw 0;
 	}
-	// D: these bdd changes only 'stick' for table for rules that aren't facts. 
-	// (.t bdd gets 'eaten' by the get_rules/get_facts for facts tables)
-	return tq = bdd_and_many(move(v));
 }
 
 void tables::init_bits() {
@@ -378,6 +413,7 @@ spbdd_handle tables::from_sym(
 	//if ((it = smemo.find(x = { i, arg, args, bits })) != smemo.end())
 	//	return it->second;
 	// fix: cache on full bits-vector not just arg bits as pos-s need to be same
+	DBG(assert(!bm.vbits.empty() && bm.bitsfixed););
 	if ((it = smemo.find(x = { i, arg, args, bm.vbits })) != smemo.end())
 		return it->second;
 	spbdd_handle r = htrue;
@@ -396,7 +432,10 @@ spbdd_handle tables::from_sym_eq(
 	size_t bits2 = bm.types[arg2].bitness;
 	// D: TODO: is this logic ok? we match bit by bit, if bits differ it's false
 	if (bits != bits2) return hfalse;
-	if ((it = ememo.find(x = { arg1, arg2, args, bits })) != ememo.end())
+	//if ((it = ememo.find(x = { arg1, arg2, args, bits })) != ememo.end())
+	//	return it->second;
+	DBG(assert(!bm.vbits.empty() && bm.bitsfixed););
+	if ((it = ememo.find(x = { arg1, arg2, args, bm.vbits })) != ememo.end())
 		return it->second;
 	spbdd_handle r = htrue;
 	for (size_t b = 0; b != bits; ++b)
@@ -1568,11 +1607,11 @@ void tables::get_alt(
 			wcout << L"get_alt a.bm != altstyped->bm:" << 
 				h.tab << L"," << altid << L"," << endl;
 		}
-		//DBG(assert(a.vm.size() == ait->second.vm.size()););
-		//DBG(assert(a.vm == ait->second.vm););
-		//DBG(assert(a.bm.types.size() == ait->second.bm.types.size()););
-		//DBG(assert(a.bm.args_bits == ait->second.bm.args_bits););
-		//DBG(assert(a.bm.get_args() == ait->second.bm.get_args()););
+		DBG(assert(a.vm.size() == ait->second.vm.size()););
+		DBG(assert(a.vm == ait->second.vm););
+		DBG(assert(a.bm.types.size() == ait->second.bm.types.size()););
+		DBG(assert(a.bm.args_bits == ait->second.bm.args_bits););
+		DBG(assert(a.bm.get_args() == ait->second.bm.get_args()););
 		// ideally we should just take alt saved, 
 		// but there could be issues w/ varmap remapping etc.
 		// we could move here safely as it's no longer needed?
@@ -2263,6 +2302,7 @@ void tables::get_rules(flat_prog p) {
 	set<alt*, ptrcmp<alt>>::const_iterator ait;
 	alt* aa;
 	//map<ntable, size_t> altids;
+	// TODO: maybe we shouldn't clear? as altids are for all progs
 	altordermap.clear();
 	for (pair<term, set<term_set>> x : m) {
 		if (x.second.empty()) continue;
@@ -2860,35 +2900,44 @@ void tables::add_prog(flat_prog m, const vector<production>& g, bool mknums) {
 	if (autotype) {
 		// tables are already in place from from_raw_term or later in grammar
 		// just init string tables, types first, no bdd-s, facts etc.
-		//for (auto x : strs) 
-		//	strtabs = init_string_tables(x.first, x.second);
-		//set<term> facts = load_string(x.first, x.second);
-		for (auto x : strs)
-			for (const term& t : load_string(x.first, x.second)) 
-				m.insert({t});
+		for (auto x : strs) 
+			strtabs = init_string_tables(x.first, x.second);
+		//// this is load_string which adds all str stuff as proper facts
+		//for (auto x : strs)
+		//	for (const term& t : load_string(x.first, x.second)) 
+		//		m.insert({t});
 		transform_grammar(g, m);
 
 		// init tables before hand, to make facts count e.g. find bits from nums
 		for (auto& tbl : tbls) tbl.bm.init(dict);
+
+		// map/sync types (type inference), find matching and root types etc.
 		get_types(m);
 		propagate_types();
 
+		// just check tables, catch any new type/bit sync/map changes (new prog)
+		for (size_t tab = 0; tab < tbls.size(); ++tab)
+			if (tbls[tab].bm.bits_changed())
+				tbls[tab].bm.bitsfixed = false; // 'un-fix' the bits, for addbit
+
 		// init tables now, as types are done...
-		init_bits();
-		//range_clear_memo();
-		//// ...now we can load string
-		////for (auto x : strs)
-		////	load_string(x.first, x.second, strtabs);
-		//for (size_t tab = 0; tab < tbls.size(); ++tab)
-		//	if (strs.empty() || !hasf(strtabs, tab))
-		//		//find(strtabs.begin(), strtabs.end(), tab) == strtabs.end())
-		//		//(size_t(strtabs[0]) != tab && size_t(strtabs[1]) != tab))
-		//		tbls[tab].init_bits();
+		//// this is for load_string which adds all str stuff as proper facts
+		//init_bits();
+		range_clear_memo();
+		// ...now we can load string
+		for (auto x : strs)
+			load_string(x.first, x.second, strtabs);
+		for (size_t tab = 0; tab < tbls.size(); ++tab)
+			if (strs.empty() || !hasf(strtabs, tab))
+				tbls[tab].init_bits();
 
 		// ...and init alt-s/bm-s as well
 		for (auto& akeyval : altstyped) { // will be empty if no autotype
 			alt& a = akeyval.second;
 			a.bm.init(dict); // this should be enough?
+			// to 'fix' the bits (any changes to be recorded for add_bits later)
+			// irrelevant for alts but we still have to do it cause of bm-s
+			a.bm.init_bits();
 			// alt-s are copied / reused later in get_alt
 		}
 	} else {
@@ -2912,8 +2961,8 @@ void tables::add_prog(flat_prog m, const vector<production>& g, bool mknums) {
 	if (dumptype) {
 		for (size_t tab = 0; tab < tbls.size(); ++tab) {
 			wstring name = lexeme2str(dict.get_rel(tbls.at(tab).s.first));
-			o::dump() << name << L"(" << tbls[tab].bm << L")" << endl;
-			//o::dump() << name << L"(" << tbls[tab].bm.types << L")" << endl;
+			//o::dump() << name << L"(" << tbls[tab].bm << L")" << endl;
+			o::dump() << name << L"(" << tbls[tab].bm.types << L")" << endl;
 			//wcout << name << L"(" << L")" << endl;
 			//for (size_t i = 0; i != tbls[tab].bm.types.size(); ++i) {
 			//	const arg_type& type = tbls[tab].bm.types.at(i);

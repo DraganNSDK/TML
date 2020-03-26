@@ -74,8 +74,6 @@ void bitsmeta::init(const dict_t& dict) {
 			default: ;
 		}
 		//DBG(assert(type.bitness < 100););
-		// init vbits (temp cache), any other caching if needed
-		//vbits[i] = types[i].bitness;
 
 		//if (vargs[i] == arg) break;
 		if (i != args-1) {
@@ -84,7 +82,7 @@ void bitsmeta::init(const dict_t& dict) {
 		}
 		// vargs is redundant here as it's an aggregate, maxb/vbits will be same
 		maxb = max(maxb, types[vargs[i]].bitness);
-		vbits[vargs[i]] = types[vargs[i]].bitness;
+		//vbits[vargs[i]] = types[vargs[i]].bitness;
 	}
 	args_bits = mleftbits.at(vargs[args-1]) + types[vargs[args-1]].bitness;
 	maxbits = maxb;
@@ -114,7 +112,7 @@ void bitsmeta::init_cache() {
 		lsum += types[vargs[i]].bitness;
 		mleftbits[vargs[i+1]] = lsum;
 		maxb = std::max(maxb, types[vargs[i]].bitness);
-		vbits[vargs[i]] = types[vargs[i]].bitness;
+		//vbits[vargs[i]] = types[vargs[i]].bitness; // wrong, missing args-1
 	}
 	args_bits = mleftbits.at(vargs[args-1]) + types[vargs[args-1]].bitness;
 	maxbits = std::max(maxb, types[vargs[args-1]].bitness);
@@ -126,6 +124,19 @@ void bitsmeta::init_cache() {
 				mpos[vargs[arg]] = argsum++;
 	}
 	DBG(assert(argsum == args_bits););
+}
+
+/* 
+ this effectively 'cements' the bits, any later on changes result in add_bits
+ (it's done on tbl init/init_bits or later on permute_type/add_bit/add_bit_perm)
+*/
+void bitsmeta::init_bits() {
+	vbits = vector<size_t>(types.size());
+	// TODO: easier is just vbits.push_back(types[i].bitness);
+	for (size_t i = 0; i != types.size(); ++i)
+		// vargs is redundant here as it's an aggregate, maxb/vbits will be same
+		vbits[vargs[i]] = types[vargs[i]].bitness;
+	bitsfixed = true;
 }
 
 bool bitsmeta::set_args(

@@ -545,6 +545,7 @@ int_t bdd::bdd_and_many_ex(bdds v, const bools& ex) {
 }
 
 int_t bdd::bdd_and_many_ex_perm(bdds v, const bools& ex, const uints& p) {
+	//AMXP.clear(), CXP.clear(), memos_perm_ex.clear();
 	return sbdd_and_many_ex_perm(ex, p, AMXP[{ex,p}], CXP[{ex,p}],
 			memos_perm_ex[{p,ex}])(v);
 }

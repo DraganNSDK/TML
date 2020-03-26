@@ -35,10 +35,12 @@ struct bitsmeta {
 	std::map<size_t, size_t> mleftbits;
 	size_t maxbits;
 	std::map<size_t, std::map<size_t, size_t>> mleftargs;
+	// this is reset on any bits / type change, will trigger tbl init_bits/reset
+	bool bitsfixed = false;
 
 	bitsmeta() {}
-	bitsmeta(size_t len) :
-		types(len), nums(len), vargs(len), vbits(len), nterms{0}, args_bits{0} {
+	bitsmeta(size_t len) 
+		: types(len), nums(len), vargs(len), nterms{0}, args_bits{0} {
 		for (size_t i = 0; i != len; ++i) vargs[i] = i; // native ordering
 	}
 	/* sort of a copy .ctor w/ bits changed (for one arg) - supports add_bit */
@@ -55,6 +57,8 @@ struct bitsmeta {
 		// TODO: check if this makes sense (e.g. if it's CHR it has to be 8)
 		++types[arg].bitness; // increase bits...
 		init_cache();
+		// Only this (add_bit_perm/add_bit) & tables::init_bits will reset vbits
+		init_bits();
 	}
 
 	int_t get_chars(size_t arg) const // TODO: 256 ? 
@@ -72,7 +76,25 @@ struct bitsmeta {
 	}
 	size_t get_bits(size_t arg) const { return types[arg].bitness; }
 	base_type get_type(size_t arg) const { return types[arg].type; }
+	/*
+	 check if bits changed, any propagate_type on new prog may do this (etc.)
+	 - once fixed, any added bits (or args??) have to be permuted (add_bit)
+	 - we don't care during propagate_types (map/sync), check at this end (this)
+	*/
+	bool bits_changed() const {
+		if (!bitsfixed) return false; // only fixed bits of interest
+		if (vbits.empty()) return false;
+		if (vbits.size() != types.size()) return true; // is this possible?
+		for (size_t i = 0; i != types.size(); ++i)
+			if (vbits[vargs[i]] != types[vargs[i]].bitness) {
+				// only increase in bits is allowed (and enforced, just recheck)
+				DBG(assert(vbits[vargs[i]] < types[vargs[i]].bitness););
+				return true;
+			}
+		return false;
+	}
 
+	void init_bits();
 	void init_cache();
 	void init(const dict_t& dict);
 	static bool sync_types(argtypes& ltypes, const argtypes& rtypes, 
