@@ -569,9 +569,9 @@ term tables::from_raw_term(const raw_term& r, bool isheader, size_t orderid) {
 			tbls[tab].bltinargs = t; // if needed, for rule/header (all in tbl)
 			tbls[tab].bltinsize = nvars; // number of vars (<0)
 		}
-		return term(r.neg, tab, t, types, nums, orderid, idbltin);
+		return term(r.neg, tab, t, types, nums, orderid, idbltin, nvars);
 	}
-	return term(r.neg, extype, r.arith_op, tab, t, types, nums, orderid);
+	return term(r.neg, extype, r.arith_op, tab, t, types, nums, orderid, nvars);
 	// ints t is elems (VAR, consts) mapped to unique ints/ids for perms.
 }
 
@@ -598,9 +598,9 @@ term tables::to_tbl_term(ntable tab, ints t, argtypes types, ints nums,
 			tbls[tab].bltinargs = t; // if needed, for rule/header (all in tbl)
 			tbls[tab].bltinsize = nvars; // number of vars (<0)
 		}
-		return term(neg, tab, t, types, nums, orderid, idbltin);
+		return term(neg, tab, t, types, nums, orderid, idbltin, nvars);
 	}
-	return term(neg, extype, arith_op, tab, t, types, nums, orderid);
+	return term(neg, extype, arith_op, tab, t, types, nums, orderid, nvars);
 	// ints t is elems (VAR, consts) mapped to unique ints/ids for perms.
 }
 
@@ -968,7 +968,7 @@ void tables::decompress(spbdd_handle x, ntable tab, const cb_decompress& f,
 		}
 		DBG(assert(bm.types.size() == len););
 		term r(false, term::REL, NOP, tab, ints(len, 0), bm.types, 
-			ints(len, 0), 0);
+			ints(len, 0), 0, 0);
 		for (size_t arg = 0; arg != len; ++arg) {
 			size_t bits = bm.get_bits(arg);
 			for (size_t b = 0; b != bits; ++b)
@@ -2052,6 +2052,19 @@ tbl_arg tables::get_fix_root_type(const tbl_arg& type) {
 	return type;
 }
 
+/* for headers only (w/ vars), simplified / optimized version */
+void tables::get_alt_types(const term& h, size_t /*altid*/) {
+	varmap m;
+	for (size_t n = 0; n != h.size(); ++n) {
+		if (h[n] < 0) {
+			if (!has(m, h[n]))
+				m.emplace(h[n], n);
+			else
+				map_type({ h.tab, m[h[n]] }, { h.tab, n });
+		}
+		// for facts, no need to map alt, just header
+	}
+}
 /*
  Go through alt/terms and do 2 things a) sync or b) map types
  - sync is important to keep the 'root table' in sync (and build up/merge types)
@@ -2065,11 +2078,14 @@ void tables::get_alt_types(const term& h, const term_set& al, size_t altid) {
 	// header types are already in sync w/ rule tbl's, just copy it to alt t-s
 	a.varslen = h.size();
 	for (size_t n = 0; n != h.size(); ++n) {
-		if (h[n] < 0 && !has(m, h[n])) 
-			m.emplace(h[n], n),
-			mh.emplace(h[n], n);
-		if (al.empty()) 
-			continue; // for facts, no need to map alt, just header
+		if (h[n] < 0) {
+			if (!has(m, h[n]))
+				m.emplace(h[n], n),
+				mh.emplace(h[n], n);
+			else
+				map_type({ h.tab, m[h[n]] }, { h.tab, n });
+		}
+		if (al.empty()) continue; // for facts, no need to map alt, just header
 		map_type({ h.tab, int_t(altid), n }, { h.tab, n });
 	}
 	for (const term& t : al) {
@@ -2244,8 +2260,8 @@ void tables::get_types(const flat_prog& p) {
 	//map<ntable, size_t> altids4types;
 	for (pair<term, set<term_set>> x : m) {
 		// (don't) let facts take part in inferring the types
-		if (x.second.empty()) continue;
-		term &t = x.first; // const ?
+		//if (x.second.empty()) continue;
+		term& t = x.first; // const ?
 		DBG(assert(t.tab != -1););
 		table& tbl = tbls[t.tab];
 		// no need to update here, just update bm
@@ -2254,8 +2270,11 @@ void tables::get_types(const flat_prog& p) {
 		// - altids moved to member, to support multiple passes, e.g. ~r() :-
 		// - negated headers will have different sig and be new entry in the map
 		size_t& n = altids4types[t.tab];
-		for (const term_set& al : x.second)
-			get_alt_types(t, al, n++); // get_alt(al, t, as);
+		if (x.second.empty() && doemptyalts && t.nvars != 0)
+			get_alt_types(t, n++);
+		else
+			for (const term_set& al : x.second)
+				get_alt_types(t, al, n++); // get_alt(al, t, as);
 	}
 }
 
@@ -2305,8 +2324,12 @@ void tables::get_rules(flat_prog p) {
 	// TODO: maybe we shouldn't clear? as altids are for all progs
 	altordermap.clear();
 	for (pair<term, set<term_set>> x : m) {
-		if (x.second.empty()) continue;
-		const term &t = x.first;
+		const term& t = x.first;
+		if (x.second.empty()) {
+			if (doemptyalts && t.nvars != 0)
+				altids[t.tab]++;
+			continue;
+		}
 		rule r;
 		if (t.neg) datalog = false;
 		tbls[t.tab].ext = false;
@@ -2383,6 +2406,7 @@ vector<ntable> tables::init_string_tables(lexeme r, const wstring& s) {
 	ints nums(len, 0);
 	//types[1] = arg_type{ base_type::CHR, 10 }; //should be 8
 	types[1] = arg_type{ base_type::CHR, 0 };
+	//types[1] = arg_type{ base_type::CHR, 11 };
 	types[0] = types[2] = arg_type{ base_type::INT, 0 };
 	//nums[0] = nums[2] = _nums; // just to recheck
 	tbl1.bm.set_args(ints(len), types, nums);
@@ -2395,6 +2419,7 @@ vector<ntable> tables::init_string_tables(lexeme r, const wstring& s) {
 	nums = ints(len, 0);
 	//types[1] = arg_type{ base_type::CHR, 10 }; //should be 8
 	types[0] = arg_type{ base_type::STR, 0 };
+	//types[0] = arg_type{ base_type::STR, 11 };
 	types[1] = types[2] = arg_type{ base_type::INT, 0 };
 	//nums[1] = nums[2] = _nums; // just to recheck
 	tbl2.bm.set_args(ints(len), types, nums);
@@ -2407,6 +2432,7 @@ vector<ntable> tables::init_string_tables(lexeme r, const wstring& s) {
 	}
 
 	types[1] = arg_type{ base_type::CHR, 0 };
+	//types[1] = arg_type{ base_type::CHR, 11 };
 	types[0] = types[2] = arg_type{ base_type::INT, 0 };
 	nums[1] = 0;
 	//nums[1] = nums[2] = _nums; // just to recheck
@@ -2416,6 +2442,7 @@ vector<ntable> tables::init_string_tables(lexeme r, const wstring& s) {
 	tbl1.bm.set_args(ints(len), types, nums);
 
 	types[0] = arg_type{ base_type::STR, 0 };
+	//types[0] = arg_type{ base_type::STR, 11 };
 	types[1] = types[2] = arg_type{ base_type::INT, 0 };
 	nums[0] = 0;
 	//nums[1] = nums[2] = _nums; // just to recheck
@@ -2858,8 +2885,9 @@ void tables::add_tml_update(const term& t, bool neg) {
 		dict.get_sym(dict.get_rel(tbls[t.tab].s.first)) };
 	args.insert(args.end(), t.begin(), t.end());
 	size_t len = args.size();
+	// TODO: D: check if nvars is 0 (fact) or not, if relevant?
 	tbls[tab].add.push_back(from_fact(
-		term(false, tab, args, argtypes(len), ints(len, 0), 0, -1)));
+		term(false, tab, args, argtypes(len), ints(len, 0), 0, -1, 0)));
 }
 
 wostream& tables::decompress_update(wostream& os, spbdd_handle& x, const rule& r) {
@@ -2931,7 +2959,7 @@ void tables::add_prog(flat_prog m, const vector<production>& g, bool mknums) {
 			if (strs.empty() || !hasf(strtabs, tab))
 				tbls[tab].init_bits();
 
-		// ...and init alt-s/bm-s as well
+		// ...and init alt-s/bm-s as well (will include empty alts, redundant)
 		for (auto& akeyval : altstyped) { // will be empty if no autotype
 			alt& a = akeyval.second;
 			a.bm.init(dict); // this should be enough?
@@ -3353,7 +3381,8 @@ tables::tables(dict_t d, bool bproof, bool optimize, bool bin_transform,
 	bool print_transformed, bool bautotype, bool bdumptype, bool baddbit) : 
 	dict(move(d)), bproof(bproof), optimize(optimize), 
 	bin_transform(bin_transform), print_transformed(print_transformed), 
-	autotype(bautotype), dumptype(bdumptype), testaddbit(baddbit) {}
+	autotype(bautotype), dumptype(bdumptype), testaddbit(baddbit),
+	doemptyalts(true) {}
 
 tables::~tables() {
 	//if (optimize) delete &dict;

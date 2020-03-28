@@ -229,7 +229,7 @@ private:
 	dict_t dict;
 	bool bproof, datalog, optimize, unsat = false, bcqc = true,
 		 bin_transform = false, print_transformed, autotype = true, dumptype,
-		 testaddbit;
+		 testaddbit, doemptyalts;
 
 	size_t max_args = 0;
 	std::map<std::array<int_t, 6>, spbdd_handle> range_memo;
@@ -418,6 +418,7 @@ private:
 	//void map_type(tbl_arg to);
 	void propagate_types();
 	void propagate_types(const tbl_arg& intype);
+	void get_alt_types(const term& h, size_t altid);
 	void get_alt_types(const term& h, const term_set& al, size_t altid);
 	//void get_types(const std::map<term, std::set<term_set>>& m);
 	void get_types(const flat_prog& p);

@@ -20,7 +20,7 @@ struct term : public ints {
 	enum textype { REL, EQ, LEQ, BLTIN, ARITH } extype = term::REL;
 	t_arith_op arith_op = NOP;
 	ntable tab = -1;
-	size_t orderid = 0;
+	size_t orderid = 0, nvars = 0;
 	// D: TODO: builtins are very different, handle as a same size union struct?
 	int_t idbltin = -1; // size_t bltinsize;
 	// D: there's a dillema how to store types (where, how much, w/ any arg or 
@@ -28,14 +28,16 @@ struct term : public ints {
 	argtypes types;
 	ints nums;
 	term() {}
-	term(bool bneg, textype xtype, t_arith_op arith_op, ntable t,
-		 const ints& args, const argtypes& ts, const ints& ns, size_t oid)
-		: ints(args), neg(bneg), extype(xtype), arith_op(arith_op), tab(t),
-		orderid(oid), types(ts), nums(ns) {}
-	term(bool bneg, ntable t, const ints& args, const argtypes& ts,
-		 const ints& ns, size_t oid, int_t idbltin)
-		: ints(args), neg(bneg), extype(term::BLTIN), tab(t), orderid(oid),
-		idbltin(idbltin), types(ts), nums(ns) {}
+	term(bool neg_, textype extype_, t_arith_op arith_op, ntable tab_,
+		 const ints& args, const argtypes& types_, const ints& nums_,
+		 size_t orderid_, size_t nvars_)
+		: ints(args), neg(neg_), extype(extype_), arith_op(arith_op), tab(tab_),
+		  orderid(orderid_), nvars(nvars_), types(types_), nums(nums_) {}
+	term(bool neg_, ntable tab_, const ints& args, const argtypes& types_,
+		 const ints& nums_, size_t orderid_, int_t idbltin, size_t nvars_)
+		: ints(args), neg(neg_), extype(term::BLTIN), tab(tab_), 
+		  orderid(orderid_), nvars(nvars_), idbltin(idbltin), types(types_), 
+		  nums(nums_) {}
 	bool operator<(const term& t) const {
 		if (neg != t.neg) return neg;
 		//if (extype != t.extype) return extype < t.extype;
