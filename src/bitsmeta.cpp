@@ -30,6 +30,8 @@ using namespace std;
 #define mksym(x) (int_t(x))
 #define un_mknum(x) (int_t(x))
 
+bool bitsmeta::BITS_FROM_LEFT = false;
+
 /* prepare bits, bitness, caches if any */
 void bitsmeta::init(const dict_t& dict) {
 	// vargs should be set before entering, or rerun this on ordering change.
@@ -131,7 +133,7 @@ void bitsmeta::init_cache() {
  (it's done on tbl init/init_bits or later on permute_type/add_bit/add_bit_perm)
 */
 void bitsmeta::init_bits() {
-	vbits = vector<size_t>(types.size());
+	vbits = uints(types.size());
 	// TODO: easier is just vbits.push_back(types[i].bitness);
 	for (size_t i = 0; i != types.size(); ++i)
 		// vargs is redundant here as it's an aggregate, maxb/vbits will be same

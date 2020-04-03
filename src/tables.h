@@ -40,7 +40,6 @@ typedef std::map<int_t, size_t> varmap;
 typedef std::map<int_t, int_t> env;
 typedef bdd_handles level;
 typedef std::set<std::vector<term>> flat_prog;
-typedef std::pair<bools, uints> permex;
 
 std::wostream& operator<<(std::wostream& os, const env& e);
 
@@ -221,6 +220,8 @@ private:
 	// maps types (pre) ordering to (post) rules ordering (sorting is different)
 	std::map<tbl_alt, tbl_alt> altordermap;
 
+	flat_prog pBin;
+
 	// D: reintroducing these just to init grammar/dyck/load_strings properly.
 	// _nums is only used to get/check that initial universe (for str_rels tbls)
 	int_t _syms = 0, _nums = 0, _chars = 0;
@@ -323,7 +324,7 @@ private:
 		size_t p1, size_t p2, size_t args, c_bitsmeta& bm) const;
 
 	void init_bits();
-	static permex permex_add_bit(ints poss, c_bitsmeta& bm, c_bitsmeta& altbm);
+	static xperm permex_add_bit(ints poss, c_bitsmeta& bm, c_bitsmeta& altbm);
 	static perminfo add_bit_perm(bitsmeta& bm, size_t arg, size_t args);
 	static spbdd_handle add_bit(
 		spbdd_handle h, const perminfo& perm, size_t arg, size_t args);
@@ -380,8 +381,8 @@ private:
 		size_t nvars = 0, bool neg = false, term::textype extype=term::REL,
 		lexeme rel=lexeme{0, 0}, t_arith_op arith_op = NOP, size_t orderid = 0);
 	
-	static permex deltail(const bitsmeta& abm, const bitsmeta& tblbm);
-	permex deltail(size_t args, size_t newargs,
+	static xperm deltail(const bitsmeta& abm, const bitsmeta& tblbm);
+	xperm deltail(size_t args, size_t newargs,
 		const bitsmeta& abm, const bitsmeta& tblbm) const;
 	uints addtail(size_t len1, size_t len2, 
 		const bitsmeta& tblbm, const bitsmeta& abm) const;
@@ -400,8 +401,15 @@ private:
 	std::set<witness> get_witnesses(const term& t, size_t l);
 	size_t get_proof(const term& q, proof& p, size_t level, size_t dep=-1);
 	void run_internal_prog(flat_prog p, std::set<term>& r, size_t nsteps=0);
-	ntable create_tmp_rel(size_t len);
-	void create_tmp_head(std::vector<term>& x);
+	ntable create_tmp_rel(size_t len, const argtypes& types, const ints& nums);
+	void create_tmp_head(std::vector<term>& x, 
+		std::vector<std::set<arg_info>>&, std::map<int_t, arg_info>&);
+	//void getvars(const term&, std::set<arg_info>&);
+	//void getvars(const std::vector<term>&, std::set<arg_info>&);
+	void getvars(const term&, 
+		std::vector<std::set<arg_info>>&, std::map<int_t, arg_info>&);
+	void getvars(const std::vector<term>&, 
+		std::vector<std::set<arg_info>>&, std::map<int_t, arg_info>&);
 	void print_env(const env& e, const rule& r) const;
 	void print_env(const env& e) const;
 	struct elem get_elem(int_t arg, const arg_type& type) const;
@@ -410,6 +418,8 @@ private:
 	void out(spbdd_handle, ntable, const rt_printer&) const;
 	void get_nums(const raw_term& t);
 	flat_prog to_terms(const raw_prog& p);
+
+	// type inference related
 	bool get_root_type(const alt_arg& type, tbl_arg& root) const;
 	tbl_arg get_root_type(const tbl_arg& type) const;
 	tbl_arg get_fix_root_type(const tbl_arg& type);
@@ -421,7 +431,10 @@ private:
 	void get_alt_types(const term& h, size_t altid);
 	void get_alt_types(const term& h, const term_set& al, size_t altid);
 	//void get_types(const std::map<term, std::set<term_set>>& m);
+	void get_prog_types(const flat_prog& p);
 	void get_types(const flat_prog& p);
+	//void get_types(flat_prog& p);
+
 	bool equal_types(const table& tbl, const alt& a) const;
 	void get_rules(flat_prog m);
 	void get_facts(const flat_prog& m);
@@ -439,8 +452,10 @@ private:
 		bool mknums = false);
 	char fwd() noexcept;
 	level get_front() const;
-	std::vector<term> interpolate(std::vector<term> x, std::set<int_t> v);
-	void transform_bin(flat_prog& p);
+	std::vector<term> interpolate(
+		std::vector<term>, std::set<arg_info>, const std::map<int_t, arg_info>&);
+	//void transform_bin(flat_prog& p);
+	flat_prog transform_bin(const flat_prog&);
 	void transform_grammar(std::vector<struct production> g, flat_prog& p);
 	bool cqc(const std::vector<term>& x, std::vector<term> y) const;
 //	flat_prog cqc(std::vector<term> x, std::vector<term> y) const;
@@ -511,7 +526,8 @@ private:
 public:
 	tables(dict_t dict, bool bproof = false, bool optimize = true,
 		bool bin_transform = false, bool print_transformed = false,
-		bool autotype = true, bool dumptype = false, bool addbit = false);
+		bool autotype = true, bool dumptype = false, bool addbit = false,
+		bool bitsfromright = true);
 	~tables();
 	size_t step() { return nstep; }
 	void add_prog(const raw_prog& p, const strs_t& strs);

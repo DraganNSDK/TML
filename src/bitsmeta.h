@@ -27,7 +27,8 @@ struct bitsmeta {
 	argtypes types;
 	// D: we need to track exact 'nums' for the range leq (bits are not enough).
 	ints nums;
-	std::vector<size_t> vargs, vbits;
+	//std::vector<size_t> vargs;
+	uints vargs, vbits;
 	size_t nterms = 0; // D: # of terms/types processed so far.
 	size_t args_bits = 0; // like args * bits (just now variable sum)
 
@@ -37,6 +38,7 @@ struct bitsmeta {
 	std::map<size_t, std::map<size_t, size_t>> mleftargs;
 	// this is reset on any bits / type change, will trigger tbl init_bits/reset
 	bool bitsfixed = false;
+	static bool BITS_FROM_LEFT;
 
 	bitsmeta() {}
 	bitsmeta(size_t len) 
@@ -72,7 +74,7 @@ struct bitsmeta {
 	size_t get_args() const { return types.size(); }
 	size_t sum_bits() const {
 		size_t args = types.size();
-		return mleftbits.at(vargs[args - 1]) + types[vargs[args - 1]].bitness;
+		return mleftbits.at(vargs[args-1]) + types[vargs[args-1]].bitness;
 	}
 	size_t get_bits(size_t arg) const { return types[arg].bitness; }
 	base_type get_type(size_t arg) const { return types[arg].type; }
@@ -151,7 +153,12 @@ struct bitsmeta {
 	// doubled consts fix: make it again from-left (consts the same as pos)
 	/* this is bit mapping for consts basically */
 	//static inline size_t bit(size_t b, size_t) { return b; }
-	static inline size_t bit(size_t b, size_t bits) { return (bits - b - 1); }
+	//static inline size_t bit(size_t b, size_t bits) { return (bits - b - 1); }
+	static inline size_t bit(size_t b, size_t bits) { 
+		return BITS_FROM_LEFT ? b : (bits - b - 1);
+		//return (bits - b - 1); 
+	}
+	//_bitsFromLeft
 
 	/*
 	- bit - bit from the right

@@ -29,6 +29,9 @@ using namespace std;
 #define mksym(x) (int_t(x))
 #define un_mknum(x) (int_t(x))
 
+// TODO: TEMP: do this in bdd.h instead
+void cleanpermcache();
+
 size_t sig_len(const sig& s) {
 	size_t r = 0;
 	for (int_t x : get<ints>(s)) if (x > 0) r += x;
@@ -108,9 +111,9 @@ spbdd_handle tables::leq_const(int_t c, size_t arg, size_t args, size_t b,
 	//		leq_const(c, arg, args, b, bits, bm));
 }
 
-typedef tuple<size_t, size_t, size_t, vector<size_t>> skmemo;
-typedef tuple<size_t, size_t, size_t, vector<size_t>> ekmemo;
-typedef tuple<int_t, size_t, size_t, vector<size_t>> ekcmemo;
+typedef tuple<size_t, size_t, size_t, uints> skmemo;
+typedef tuple<size_t, size_t, size_t, uints> ekmemo;
+typedef tuple<int_t, size_t, size_t, uints> ekcmemo;
 map<skmemo, spbdd_handle> smemo;
 map<ekmemo, spbdd_handle> ememo;
 map<ekmemo, spbdd_handle> leqmemo;
@@ -286,7 +289,7 @@ uints perm_init(const bitsmeta& bm) {
 }
 
 /* add bit to permute/ex (of a body) */
-permex tables::permex_add_bit(ints poss, c_bitsmeta& bm, c_bitsmeta& altbm) {
+xperm tables::permex_add_bit(ints poss, c_bitsmeta& bm, c_bitsmeta& altbm) {
 	DBG(assert(bm.get_args() == poss.size()););
 	//size_t args = bm.get_args();
 	bools ex = bools(bm.args_bits, false);
@@ -326,10 +329,13 @@ spbdd_handle tables::add_bit(
 	if (h == nullptr) 
 		return h;
 	bdd_handles v = { h ^ perm.perm };
-	v.push_back(::from_bit(perm.bm.pos(0, arg, args), false));
-	// doubled consts fix: reverse bits, ie from-left (as consts), empty bits-1
-	//size_t bits = perm.bm.types[arg].bitness;
-	//v.push_back(::from_bit(perm.bm.pos(bits-1, arg, args), false));
+	if (!bitsmeta::BITS_FROM_LEFT) // i.e. reversed for consts, from-right
+		v.push_back(::from_bit(perm.bm.pos(0, arg, args), false));
+	else {
+		// doubled consts fix: reverse bits, ie from-left (as consts), empty bits-1
+		size_t bits = perm.bm.types[arg].bitness;
+		v.push_back(::from_bit(perm.bm.pos(bits-1, arg, args), false));
+	}
 	return bdd_and_many(move(v));
 }
 
@@ -345,7 +351,7 @@ spbdd_handle table::init_bits() { //table& tbl) {
 	// problem is what if smth changed? we should only init added bits, keep .t
 	if (bm.bitsfixed) return tq;
 	//bm.bitsfixed = true;
-	vector<size_t> vbits = bm.vbits; // old vbits, to know which bits 2 add_bit
+	uints vbits = bm.vbits; // old vbits, to know which bits 2 add_bit
 	//bool isfullinit = vbits.empty();
 	bool isaddbit = !vbits.empty();
 	bm.init_bits();
@@ -892,8 +898,34 @@ void form::printnode(int lv) {
 	if(l) l->printnode(lv+1);
 }
 
+//auto tbl_cmp = [](const table& x, const table& y) {
+//	lexeme lx = dict.get_rel(get<0>(x.s));
+//	lexeme ly = dict.get_rel(get<0>(y.s));
+//	if (lx[1] - lx[0] != ly[1] - ly[0]) return lx[1] - lx[0] < ly[1] - ly[0];
+//	return wcsncmp(lx[0], ly[0], lx[1] - lx[0]) < 0;
+//};
+
 void tables::out(wostream& os) const {
-	strs_t::const_iterator it;
+	//strs_t::const_iterator it;
+	//uints otbls = perm_init(tbls.size()); // std::transform?
+	//sort(otbls.begin(), otbls.end(), [this](const uint_t& x, const uint_t& y){
+	//	lexeme l = dict.get_rel(get<0>(tbls[x].s));
+	//	lexeme r = dict.get_rel(get<0>(tbls[y].s));
+	//	size_t llen = l[1]-l[0], rlen = r[1]-r[0];
+	//	int_t cmp = wcsncasecmp(l[0], r[0], min(llen, rlen));
+	//	if (cmp == 0)
+	//		return llen < rlen;
+	//	return cmp < 0;
+	//	//cmp < 0
+	//	//return wcsncasecmp(l[0], r[0], min(llen, rlen)) < 0;
+	//	//return lexeme2str(l) < lexeme2str(r);
+	//	//if (l[1]-l[0] != r[1]-r[0]) return l[1]-l[0] > r[1]-r[0];
+	//	//return wcsncmp(l[0], r[0], l[1]-l[0]) > 0;
+	//	});
+	//for (size_t i = 0; i != otbls.size(); ++i)
+	//	out(os, tbls[otbls[i]].tq, otbls[i]);
+	//return;
+	
 	for (ntable tab = 0; (size_t)tab != tbls.size(); ++tab)
 //		if ((it = strs.find(dict.get_rel(tab))) == strs.end())
 			out(os, tbls[tab].tq, tab);
@@ -963,9 +995,11 @@ void tables::decompress(spbdd_handle x, ntable tab, const cb_decompress& f,
 	allsat_cb(x/*&&ts[tab].tq*/, bm.args_bits, //len * bits,
 		[tab, &f, len, &bm, this](const bools& p, int_t DBG(y)) {
 		//DBG(assert(abs(y) == 1);)
+#ifdef DEBUG
 		if (abs(y) != 1) {
 			wcout << L"decompress:   \t" << y << endl;
 		}
+#endif
 		DBG(assert(bm.types.size() == len););
 		term r(false, term::REL, NOP, tab, ints(len, 0), bm.types, 
 			ints(len, 0), 0, 0);
@@ -1437,12 +1471,46 @@ void tables::run_internal_prog(flat_prog p, set<term>& r, size_t nsteps) {
 	if (!t.run_nums(move(p), r, nsteps)) throw 0;
 }
 
-void getvars(const term& t, set<int_t>& v) {
-	for (int_t i : t) if (i < 0) v.insert(i);
+void tables::getvars(
+	const term& t, vector<set<arg_info>>& vars, map<int_t, arg_info>& mvars) {
+	//for (int_t i : t) if (i < 0) v.insert(i);
+	// we still have type inference in progress, best we can do is tbl or term
+	set<arg_info> v;
+	const argtypes& types = t.tab != -1 ? tbls[t.tab].bm.types : t.types;
+	const ints& nums = t.tab != -1 ? tbls[t.tab].bm.nums : t.nums;
+	for (size_t n = 0; n != t.size(); ++n)
+		if (t[n] < 0) {
+			//arg_info newinfo{ t[n], types[n], nums[n] };
+			auto it = mvars.find(t[n]);
+			if (it != mvars.end()) {
+				arg_info& info = it->second; // mvars.at(t[n]);
+				if (t.tab != -1)
+					bitsmeta::sync_types(tbls[t.tab].bm.types[n], info.type,
+										 tbls[t.tab].bm.nums[n], info.num);
+				bitsmeta::sync_types(
+					info.type, t.types[n],
+					info.num, t.nums[n]);
+				v.insert(info);
+			} else {
+				if (t.tab != -1) {
+					arg_info info{ 
+						t[n], tbls[t.tab].bm.types[n], tbls[t.tab].bm.nums[n] };
+					mvars.emplace(t[n], info);
+					v.insert(info);
+				} else {
+					arg_info info{ t[n], t.types[n], t.nums[n] };
+					mvars.emplace(t[n], info);
+					v.insert(info);
+				}
+			}
+			//v.insert({ t[n], types[n], nums[n] });
+		}
+	vars.push_back(move(v));
 }
 
-void getvars(const vector<term>& t, set<int_t>& v) {
-	for (const term& x : t) getvars(x, v);
+void tables::getvars(const vector<term>& t, 
+	vector<set<arg_info>>& vars, map<int_t, arg_info>& mvars) {
+	for (const term& x : t) getvars(x, vars, mvars);
 }
 
 void create_head(vector<term>&, ntable) {
@@ -1453,17 +1521,26 @@ void create_head(vector<term>&, ntable) {
 	x.insert(x.begin(), move(h));*/
 }
 
-ntable tables::create_tmp_rel(size_t len) {
+ntable tables::create_tmp_rel(
+	size_t len, const argtypes& types, const ints& nums) 
+{
 	ntable tab = get_new_tab(dict.get_rel(get_new_rel()), {(int_t)len});
 	// TODO: just some basic init, make it better
-	tbls[tab].bm.init(dict);
+	table& tbl = tbls[tab];
+	tbl.bm.set_args(ints(len), types, nums);
+	tbl.bm.init(dict);
 	return tmprels.insert(tab), tab;
 }
 
-void tables::create_tmp_head(vector<term>& x) {
-	set<int_t> v;
-	getvars(x, v);
-	create_head(x, create_tmp_rel(v.size()));
+void tables::create_tmp_head(
+	vector<term>& x, vector<set<arg_info>>& vars, map<int_t, arg_info>& mvars) {
+	throw 0;
+	////set<int_t> v;
+	//size_t n = vars.size();
+	//getvars(x, vars, mvars); // v);
+	//n = vars.size() - n;
+	//create_head(x, create_tmp_rel(n));
+	////create_head(x, create_tmp_rel(v.size()));
 }
 
 /*flat_prog tables::cqc(vector<term> x, vector<term> y) const {
@@ -1617,6 +1694,8 @@ void tables::get_alt(
 		// we could move here safely as it's no longer needed?
 		//a = ait->second;
 	} else {
+		if (optimize)
+			wcout << L"altstyped not found?" << h.tab << L"," << altid << endl;
 		// D: this makes alt's bitmeta bits (for alt specific args/bdds).
 		init_varmap(a, h, al); // we get varmaps, varslen, inv and bm set
 		// this could now be removed if -autotype is on, done in get_types()?
@@ -1799,25 +1878,59 @@ void tables::set_priorities(const flat_prog& p) {
 	}
 }*/
 
-vector<term> tables::interpolate(vector<term> x, set<int_t> v) {
+//vector<term> tables::interpolate(vector<term> x, set<int_t> v) {
+//	term t;
+//	for (size_t k = 0; k != x.size(); ++k)
+//		for (size_t n = 0; n != x[k].size(); ++n)
+//			if (has(v, x[k][n]))
+//				t.push_back(x[k][n]), v.erase(x[k][n]);
+//	return t.tab = create_tmp_rel(t.size()), x.insert(x.begin(), t), x;
+//}
+//set<int_t> intersect(const set<int_t>& x, const set<int_t>& y) {
+//	set<int_t> r;
+//	set_intersection(x.begin(), x.end(), y.begin(), y.end(),
+//		inserter(r, r.begin()));
+//	return r;
+//}
+
+vector<term> tables::interpolate(
+	vector<term> x, set<arg_info> v, const map<int_t, arg_info>& mvars) {
 	term t;
+	//argtypes types;
+	//ints nums;
+	set<int_t> done;
 	for (size_t k = 0; k != x.size(); ++k)
 		for (size_t n = 0; n != x[k].size(); ++n)
-			if (has(v, x[k][n]))
-				t.push_back(x[k][n]), v.erase(x[k][n]);
-	return t.tab = create_tmp_rel(t.size()), x.insert(x.begin(), t), x;
+			if (has(mvars, x[k][n]) && !has(done, x[k][n])) {
+				// if (has(v, x[k][n])) {
+				const arg_info& info = mvars.at(x[k][n]);
+				t.push_back(x[k][n]);
+				t.types.push_back(info.type);
+				t.nums.push_back(info.num);
+				//types.push_back(info.type);
+				//nums.push_back(info.num);
+				//v.erase(x[k][n]);
+				done.insert(x[k][n]);
+				//mvars.erase(x[k][n]);
+			}
+	t.tab = create_tmp_rel(t.size(), t.types, t.nums);
+	x.insert(x.begin(), t);
+	return x;
 }
 
-set<int_t> intersect(const set<int_t>& x, const set<int_t>& y) {
-	set<int_t> r;
+set<arg_info> intersect(const set<arg_info>& x, const set<arg_info>& y) {
+	set<arg_info> r;
 	set_intersection(x.begin(), x.end(), y.begin(), y.end(),
 		inserter(r, r.begin()));
 	return r;
 }
 
-void tables::transform_bin(flat_prog& p) {
-	const flat_prog q = move(p);
-	vector<set<int_t>> vars;
+//void tables::transform_bin(flat_prog& p) {
+flat_prog tables::transform_bin(const flat_prog& q) {
+	//const flat_prog q = move(p);
+	flat_prog p;
+	vector<set<arg_info>> vars; //vector<set<int_t>> vars;
+	map<int_t, arg_info> mvars;
 	auto getterms = [&vars]
 		(const vector<term>& x) -> vector<size_t> {
 		if (x.size() <= 3) return {};
@@ -1836,24 +1949,33 @@ void tables::transform_bin(flat_prog& p) {
 	};
 	vector<term> r;
 	vector<size_t> m;
-	set<int_t> v;
 	for (vector<term> x : q) {
 		if (x[0].goal) { goals.insert(x[0]); continue; }
 			//prog_add_rule(p, x); continue; }
-		for (const term& t : x) getvars(t, v), vars.push_back(move(v));
+		for (const term& t : x) {
+			getvars(t, vars, mvars);
+			//getvars(t, v);
+			//vars.push_back(move(v));
+		}
 		while (!(m = getterms(x)).empty()) {
 			for (size_t i : m) r.push_back(x[i]);
 			for (size_t n = m.size(); n--;)
 				x.erase(x.begin() + m[n]),
 				vars.erase(vars.begin() + m[n]);
-			for (const auto& s : vars) v.insert(s.begin(), s.end());
-			r = interpolate(r, move(v)),
-			x.push_back(r[0]), getvars(r[0], v),
-			vars.push_back(move(v)), p.insert(move(r));
+			set<arg_info> v; // set<int_t> v;
+			for (const auto& s : vars)
+				v.insert(s.begin(), s.end());
+			r = interpolate(r, move(v), mvars);
+			x.push_back(r[0]);
+			getvars(r[0], vars, mvars);
+			//getvars(r[0], v);
+			//vars.push_back(move(v));
+			p.insert(move(r));
 		}
-		p.insert(move(x)), vars.clear();
+		p.insert(move(x)), vars.clear(), mvars.clear();
 	}
 	if (print_transformed) print(o::out()<<L"after transform_bin:"<<endl,p);
+	return p;
 }
 
 /*struct cqcdata {
@@ -2248,7 +2370,39 @@ void tables::get_alt_types(const term& h, const term_set& al, size_t altid) {
 /*
  Type inference
 */
+//void tables::get_types(flat_prog& p) {
 void tables::get_types(const flat_prog& p) {
+	// TODO: we're not processing prog_add_rule etc. (does nothing), keep an eye
+	// (as get_types needs to be in sync w/ the get_rules (same order of t-s...)
+	//flat_prog q(move(p));
+	//map<ntable, ntable> mt;
+	//q = move(p);
+	//for (const auto& x : q) prog_add_rule(p, mt, x);
+	//replace_rel(move(mt), p), set_priorities(p);
+
+#ifndef TRANSFORM_BIN_DRIVER
+	// we need to keep get_types in sync w/ get_rules (same terms, ordering)
+	//if (bin_transform) transform_bin(p);
+	if (bin_transform) {
+		//flat_prog q(move(p)), pnew;
+		//map<ntable, ntable> mt;
+		//for (const auto& x : q) prog_add_rule(pnew, mt, x);
+		//replace_rel(move(mt), pnew);
+		flat_prog q(move(transform_bin(p)));
+		map<ntable, ntable> mt;
+		// pBin: save all post-processing prog/terms, reuse in get_rules
+		for (const auto& x : q) prog_add_rule(pBin, mt, x);
+		replace_rel(move(mt), pBin);
+		set_priorities(pBin);
+		get_prog_types(pBin);
+		//get_prog_types(move(transform_bin(p)));
+		return;
+	}
+#endif
+	get_prog_types(p);
+}
+
+void tables::get_prog_types(const flat_prog & p) {
 	// TODO: optimize later, for now make a map like we're doing it in get_rules
 	// (it's too late in get_rules, and we need to sort/termset, also alts etc.)
 	map<term, set<term_set>> m;
@@ -2300,13 +2454,17 @@ void tables::get_rules(flat_prog p) {
 	if (bcqc) print(o::out()<<L"after cqc before tbin, "
 		<<p.size()<<L" rules."<<endl, p);
 #ifndef TRANSFORM_BIN_DRIVER
-	if (bin_transform) transform_bin(p);
+	if (bin_transform) {
+		if (autotype && !pBin.empty()) 
+			 p = move(pBin);
+		else p = move(transform_bin(p)); // move unnecessary 
+	}
 #endif
 	if (bcqc) print(o::out()<<L"before cqc after tbin, "
 		<<p.size()<< L" rules."<<endl, p);
-	q = move(p);
-	for (const auto& x : q) prog_add_rule(p, mt, x);
-	replace_rel(move(mt), p), set_priorities(p);
+	//q = move(p);
+	//for (const auto& x : q) prog_add_rule(p, mt, x);
+	//replace_rel(move(mt), p), set_priorities(p);
 	if (bcqc) print(o::out()<<L"after cqc, "
 		<<p.size()<< L" rules."<<endl, p);
 	if (optimize) bdd::gc();
@@ -2325,6 +2483,9 @@ void tables::get_rules(flat_prog p) {
 	altordermap.clear();
 	for (pair<term, set<term_set>> x : m) {
 		const term& t = x.first;
+		//if (optimize)
+		//	wcout << L"rule: " << t.tab << L", " << altids[t.tab] << L", " 
+		//		  << tbls[t.tab].priority << endl;
 		if (x.second.empty()) {
 			if (doemptyalts && t.nvars != 0)
 				altids[t.tab]++;
@@ -2378,8 +2539,12 @@ void tables::get_rules(flat_prog p) {
 
 	tblrules.clear();
 	size_t i = 0;
-	for (const rule& r : rules)
+	for (const rule& r : rules) {
+		//if (optimize)
+		//	wcout << L"sorted: " << r.tab << L", " << tbls[r.tab].priority 
+		//		  << L", " << i << endl;
 		tblrules[r.tab].insert(i++);
+	}
 }
 
 vector<ntable> tables::init_string_tables(lexeme r, const wstring& s) {
@@ -2404,9 +2569,8 @@ vector<ntable> tables::init_string_tables(lexeme r, const wstring& s) {
 	DBG(assert(len == 3););
 	argtypes types(len);
 	ints nums(len, 0);
-	//types[1] = arg_type{ base_type::CHR, 10 }; //should be 8
 	types[1] = arg_type{ base_type::CHR, 0 };
-	//types[1] = arg_type{ base_type::CHR, 11 };
+	//types[1] = arg_type{ base_type::CHR, 12 }; //should be 8
 	types[0] = types[2] = arg_type{ base_type::INT, 0 };
 	//nums[0] = nums[2] = _nums; // just to recheck
 	tbl1.bm.set_args(ints(len), types, nums);
@@ -2417,9 +2581,8 @@ vector<ntable> tables::init_string_tables(lexeme r, const wstring& s) {
 	DBG(assert(len == 3););
 	types = argtypes(len);
 	nums = ints(len, 0);
-	//types[1] = arg_type{ base_type::CHR, 10 }; //should be 8
 	types[0] = arg_type{ base_type::STR, 0 };
-	//types[0] = arg_type{ base_type::STR, 11 };
+	//types[0] = arg_type{ base_type::STR, 12 };
 	types[1] = types[2] = arg_type{ base_type::INT, 0 };
 	//nums[1] = nums[2] = _nums; // just to recheck
 	tbl2.bm.set_args(ints(len), types, nums);
@@ -2432,7 +2595,7 @@ vector<ntable> tables::init_string_tables(lexeme r, const wstring& s) {
 	}
 
 	types[1] = arg_type{ base_type::CHR, 0 };
-	//types[1] = arg_type{ base_type::CHR, 11 };
+	//types[1] = arg_type{ base_type::CHR, 12 };
 	types[0] = types[2] = arg_type{ base_type::INT, 0 };
 	nums[1] = 0;
 	//nums[1] = nums[2] = _nums; // just to recheck
@@ -2442,7 +2605,7 @@ vector<ntable> tables::init_string_tables(lexeme r, const wstring& s) {
 	tbl1.bm.set_args(ints(len), types, nums);
 
 	types[0] = arg_type{ base_type::STR, 0 };
-	//types[0] = arg_type{ base_type::STR, 11 };
+	//types[0] = arg_type{ base_type::STR, 12 };
 	types[1] = types[2] = arg_type{ base_type::INT, 0 };
 	nums[0] = 0;
 	//nums[1] = nums[2] = _nums; // just to recheck
@@ -3017,7 +3180,7 @@ void tables::add_prog(flat_prog m, const vector<production>& g, bool mknums) {
 	if (optimize) bdd::gc();
 }
 
-permex tables::deltail(const bitsmeta& abm, const bitsmeta& tblbm) {
+xperm tables::deltail(const bitsmeta& abm, const bitsmeta& tblbm) {
 	size_t args = abm.get_args();
 	size_t newargs = tblbm.get_args();
 	bools ex(abm.args_bits, false);
@@ -3033,7 +3196,7 @@ permex tables::deltail(const bitsmeta& abm, const bitsmeta& tblbm) {
 shrinks from alt to tbl domain/bits (temp right-side args are being removed)
 (TODO: args/newargs are not needed)
 */
-permex tables::deltail(size_t args, size_t newargs,
+xperm tables::deltail(size_t args, size_t newargs,
 	const bitsmeta& abm, const bitsmeta& tblbm) const {
 	DBG(assert(args == abm.get_args()););
 	DBG(assert(newargs == tblbm.get_args()););
@@ -3075,6 +3238,7 @@ spbdd_handle tables::addtail(cr_spbdd_handle x, size_t args, size_t newargs,
 	DBG(assert(newargs == abm.get_args()););
 	if (args == newargs) return x;
 	// permute is applied right away
+	//operator^(x, addtail(args, newargs, tblbm, abm));
 	return x ^ addtail(args, newargs, tblbm, abm);
 }
 
@@ -3086,7 +3250,7 @@ spbdd_handle tables::body_query(body& b, size_t /*DBG(len)*/) {
 	if (b.tlast && b.tlast->b == tbls[b.tab].tq->b) return b.rlast;
 	b.tlast = tbls[b.tab].tq;
 	return b.rlast = (b.neg ? bdd_and_not_ex_perm : bdd_and_ex_perm)
-		(b.q, tbls[b.tab].tq, b.ex, b.perm);
+		(b.q, tbls[b.tab].tq, b.ex, b.perm, tbls[b.tab].bm.vbits);
 //	DBG(assert(bdd_nvars(b.rlast) < len*bits);)
 //	if (b.neg) b.rlast = bdd_and_not_ex_perm(b.q, ts[b.tab].tq, b.ex,b.perm);
 //	else b.rlast = bdd_and_ex_perm(b.q, ts[b.tab].tq, b.ex, b.perm);
@@ -3099,6 +3263,7 @@ auto handle_cmp = [](const spbdd_handle& x, const spbdd_handle& y) {
 	return x->b < y->b;
 };
 
+static double tbodies, tandmany, tpermute;
 spbdd_handle tables::alt_query(alt& a, size_t /*DBG(len)*/) {
 /*	spbdd_handle t = htrue;
 	for (auto x : a.order) {
@@ -3113,12 +3278,23 @@ spbdd_handle tables::alt_query(alt& a, size_t /*DBG(len)*/) {
 	spbdd_handle x;
 	//DBG(assert(!a.empty());)
 
+	clock_t start, end;
+	if (optimize)
+		measure_time_start();
 	for (size_t n = 0; n != a.size(); ++n)
 		if (hfalse == (x = body_query(*a[n], a.varslen))) {
 			a.insert(a.begin(), a[n]), a.erase(a.begin() + n + 1);
 			return hfalse;
 		} else v1.push_back(x);
+	if (optimize) {
+		end = clock();
+		tbodies += double(end - start) / CLOCKS_PER_SEC;
+		//o::ms() << L"# alt_query(body_query-s)\t: ";
+		//measure_time_end();
+	}
 
+	//if (optimize)
+	//	measure_time_start();
 	if (a.idbltin > -1) {
 		lexeme bltintype = dict.get_bltin(a.idbltin);
 		int_t bltinout = a.bltinargs.back(); // for those that have ?out
@@ -3209,17 +3385,48 @@ spbdd_handle tables::alt_query(alt& a, size_t /*DBG(len)*/) {
 		//	v1.push_back(x);
 		//}
 	}
+	//if (optimize) {
+	//	o::ms() << L"# bltin\t: ";
+	//	measure_time_end();
+	//}
 
+	//if (optimize)
+	//	measure_time_start();
 	sort(v1.begin(), v1.end(), handle_cmp);
+	//if (optimize) {
+	//	o::ms() << L"# sort\t: ";
+	//	measure_time_end();
+	//}
 	if (v1 == a.last) return a.rlast;// { v.push_back(a.rlast); return; }
-	if (!bproof)
-		return	a.rlast =
-			bdd_and_many_ex_perm(a.last = move(v1), a.ex, a.perm);
+	//bdd::cleancache();
+	if (!bproof) {
+		if (optimize)
+			measure_time_start();
+		a.rlast =
+			bdd_and_many_ex_perm(a.last = move(v1), a.ex, a.perm, a.bm.vbits);
+		if (optimize) {
+			end = clock();
+			tandmany += double(end - start) / CLOCKS_PER_SEC;
+			//o::ms() << L"# bdd_and_many_ex_perm\t: ";
+			//measure_time_end();
+		}
+		return a.rlast;
+	}
+	if (optimize)
+		measure_time_start();
 	a.levels.emplace(nstep, x = bdd_and_many(v1));
 //	if ((x = bdd_and_many_ex(a.last, a.ex)) != hfalse)
 //		v.push_back(a.rlast = x ^ a.perm);
 //	bdd_handles v;
-	return a.rlast = bdd_permute_ex(x, a.ex, a.perm);
+	a.rlast = bdd_permute_ex(x, a.ex, a.perm, a.bm.vbits);
+	if (optimize) {
+		end = clock();
+		tpermute += double(end - start) / CLOCKS_PER_SEC;
+		//o::ms() << L"# bdd_permute_ex\t: ";
+		//measure_time_end();
+	}
+	return a.rlast;
+
 //	if ((x = bdd_and_many_ex_perm(a.last, a.ex, a.perm)) != hfalse)
 //		v.push_back(a.rlast = x);
 //	return x;
@@ -3244,10 +3451,24 @@ bool table::commit(DBG(size_t /*bits*/)) {
 }
 
 char tables::fwd() noexcept {
+	clock_t start, end, rstart;
+	static double talts, trules;
+	if (optimize)
+		rstart = clock();
 	for (rule& r : rules) {
+		if (optimize) 
+			measure_time_start();
 		bdd_handles v(r.size());
 		for (size_t n = 0; n != r.size(); ++n)
 			v[n] = alt_query(*r[n], r.len);
+		if (optimize) {
+			end = clock();
+			talts += double(end - start) / CLOCKS_PER_SEC;
+			o::ms() << L"# alt_queries\t: " << r.tab << L"\t";
+			o::ms() << std::fixed << std::setprecision(2)
+					<< talts * 1000 << L" ms" << endl;
+			//measure_time_end();
+		}
 		spbdd_handle x;
 		if (v == r.last) { if (datalog) continue; x = r.rlast; }
 		// applying the r.eq and or-ing all alt-s
@@ -3257,13 +3478,42 @@ char tables::fwd() noexcept {
 		(r.neg ? tbls[r.tab].del : tbls[r.tab].add).push_back(x);
 		if (print_updates || populate_tml_update)
 			decompress_update(o::inf(), x, r);
+		//if (optimize) {
+		//	o::ms() << L"# rule\t: " << r.tab << L"\t";
+		//	measure_time_end();
+		//}
+	}
+	if (optimize) {
+		//trules += double(clock() - rstart) / CLOCKS_PER_SEC;
+		o::ms() << L"# rules:\t";
+		o::ms() << std::fixed << std::setprecision(2)
+				<< (double(clock() - rstart) / CLOCKS_PER_SEC) * 1000
+				<< L" ms" << endl;
+		//o::ms() << L"# rules:\t" << trules << endl;
+		//measure_time_end();
+		o::ms() << L"# alt_queries(bodies):\t";
+		o::ms() << std::fixed << std::setprecision(2)
+				<< tbodies * 1000 << L"\t";
+		o::ms() << L"# alt_queries(andmany):\t";
+		o::ms() << std::fixed << std::setprecision(2)
+				<< tandmany * 1000 << L"\t";
+		o::ms() << L"# alt_queries(permute):\t";
+		o::ms() << std::fixed << std::setprecision(2)
+				<< tpermute * 1000 << endl;
+		//measure_time_end();
+		measure_time_start();
 	}
 	bool b = false;
 	// header builtins support: this tracks if any recent changes/commits
 	for (ntable tab = 0; (size_t)tab != tbls.size(); ++tab) {
+		//break;
 		table& tbl = tbls[tab];
 		bool changes = tbl.commit(DBG(0)); // bits));
 		b |= changes;
+
+		if (tbl.unsat) return unsat = true;
+		continue;
+
 		if (!changes && tbl.idbltin > -1) {
 			//lexeme bltintype = dict.get_bltin(tbl.idbltin);
 			set<term>& ts = mhits[tab];
@@ -3301,6 +3551,12 @@ char tables::fwd() noexcept {
 		}
 		if (tbl.unsat) return unsat = true;
 	}
+	if (optimize) {
+		o::ms() << L"# commit: ";
+		measure_time_end();
+	}
+
+	//out(wcout);
 
 	// this does a test addbit, until we have a good use/test case
 	static bool isfirst = testaddbit;
@@ -3341,6 +3597,9 @@ bool tables::pfp(size_t nsteps, size_t break_on_step) {
 	set<level> s;
 	if (bproof) levels.emplace_back(get_front());
 	level l;
+	clock_t start, end;
+	//if (optimize)
+	//	measure_time_start();
 	for (;;) {
 		if (print_steps || optimize)
 			o::inf() << L"# step: " << nstep << endl;
@@ -3353,6 +3612,10 @@ bool tables::pfp(size_t nsteps, size_t break_on_step) {
 		if (!datalog && !s.emplace(l).second) throw infloop_exception();
 		if (bproof) levels.push_back(move(l));
 	}
+	//if (optimize) {
+	//	o::ms() << L"# steps\t: ";
+	//	measure_time_end();
+	//}
 	throw 0;
 }
 
@@ -3369,8 +3632,8 @@ bool tables::run_prog(const raw_prog& p, const strs_t& strs, size_t steps,
 		measure_time_start();
 	}
 	bool r = pfp(steps ? nstep + steps : 0, break_on_step);
-	//if (r && prog_after_fp.size())
-	//	add_prog(move(prog_after_fp), {}, false), r = pfp();
+	if (r && prog_after_fp.size())
+		add_prog(move(prog_after_fp), {}, false), r = pfp();
 	if (optimize)
 		(o::ms() <<L"add_prog: "<<t << L" pfp: "),
 		measure_time_end();
@@ -3378,11 +3641,15 @@ bool tables::run_prog(const raw_prog& p, const strs_t& strs, size_t steps,
 }
 
 tables::tables(dict_t d, bool bproof, bool optimize, bool bin_transform,
-	bool print_transformed, bool bautotype, bool bdumptype, bool baddbit) : 
+	bool print_transformed, bool autotype_, bool dumptype_, bool addbit_,
+	bool bitsfromright_) :
 	dict(move(d)), bproof(bproof), optimize(optimize), 
 	bin_transform(bin_transform), print_transformed(print_transformed), 
-	autotype(bautotype), dumptype(bdumptype), testaddbit(baddbit),
-	doemptyalts(true) {}
+	autotype(autotype_), dumptype(dumptype_), testaddbit(addbit_),
+	doemptyalts(true) {
+	// just a quick fix, we should have some global settings or something
+	bitsmeta::BITS_FROM_LEFT = !bitsfromright_;
+}
 
 tables::~tables() {
 	//if (optimize) delete &dict;
