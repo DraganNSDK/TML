@@ -224,8 +224,8 @@ private:
 
 	// D: reintroducing these just to init grammar/dyck/load_strings properly.
 	// _nums is only used to get/check that initial universe (for str_rels tbls)
-	int_t _syms = 0, _nums = 0, _chars = 0;
-	size_t _bits = 2;
+	//int_t _syms = 0, _nums = 0, _chars = 0;
+	//size_t _bits = 2;
 
 	dict_t dict;
 	bool bproof, datalog, optimize, unsat = false, bcqc = true,
@@ -446,7 +446,7 @@ private:
 	std::vector<ntable> init_string_tables(lexeme rel, const std::wstring& s);
 	void load_string(
 		lexeme rel, const std::wstring& s, const std::vector<ntable> tbls);
-	std::set<term> load_string(lexeme r, const std::wstring& s);
+	//std::set<term> load_string(lexeme r, const std::wstring& s);
 	lexeme get_var_lexeme(int_t i);
 	void add_prog(flat_prog m, const std::vector<struct production>&,
 		bool mknums = false);
