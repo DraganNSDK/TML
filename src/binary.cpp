@@ -162,7 +162,7 @@ istream& operator>>(istream& is, dict_t& d) {
 	for (int_t i = 0; i != nsyms; ++i) {
 		wstring t = read_string(is);
 		DBG(o::out() << L"\t`" << t << L'`' << endl;);
-		// D: TODO: this might no longer work, it's just for seems, no shifting.
+		// D: TODO: this might no longer work, it's just for syms, no shifting.
 		d.get_sym(d.get_lexeme(t));
 	}
 	return is;

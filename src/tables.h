@@ -23,7 +23,6 @@
 #include "bdd.h"
 #include "term.h"
 #include "bitsmeta.h"
-//#include "iterbdds.h"
 #include "dict.h"
 #include "infer_types.h"
 
@@ -52,19 +51,6 @@ template<typename T> struct ptrcmp {
 typedef std::function<void(size_t,size_t,size_t, const std::vector<term>&)>
 	cb_ground;
 
-//struct natcmp {
-//	bool operator()(const term& l, const term& r) const {
-//		if (l.orderid != r.orderid) return l.orderid < r.orderid;
-//		if (l.neg != r.neg) return l.neg;
-//		//if (iseq != t.iseq) return iseq;
-//		//if (isleq != t.isleq) return isleq;
-//		//if (extype != t.extype) return extype < t.extype;
-//		//if (l.tab != r.tab) return l.tab < r.tab;
-//		if (l.goal != r.goal) return l.goal;
-//		return (const ints&)l < r;
-//	}
-//};
-//typedef std::set<term, natcmp> term_set;
 
 struct body {
 	bool neg, ext = false;
@@ -208,15 +194,6 @@ private:
 	std::map<ntable, std::set<tbl_alt>> tblbodies;
 	std::map<ntable, std::set<term>> mhits;
 
-	//std::map<tbl_arg, std::set<alt_arg>> minvtyps;
-	//std::map<alt_arg, tbl_arg> mtyps;
-	//// enumerates alts as they come, initially local, it needs to be here
-	//// we need to support multiple progs and transform/after
-	//std::map<ntable, size_t> altids4types;
-
-	//// this is is auto typed info for pre-processing 
-	//std::map<tbl_alt, alt> altstyped;
-
 	std::map<ntable, size_t> altids;
 
 	// this is the real alts type info, used for post-processing e.g. addbit
@@ -226,10 +203,10 @@ private:
 	// maps types (pre) ordering to (post) rules ordering (sorting is different)
 	std::map<tbl_alt, tbl_alt> altordermap;
 
+	// saved bin transform done during get_types (to reuse in get_rules)
 	flat_prog pBin;
 
-	// D: reintroducing these just to init grammar/dyck/load_strings properly.
-	// _nums is only used to get/check that initial universe (for str_rels tbls)
+	// D: old stuff, just for historical reasons, and some comparing/debugging.
 	//int_t _syms = 0, _nums = 0, _chars = 0;
 	//size_t _bits = 2;
 
@@ -313,10 +290,6 @@ private:
 	size_t arg(size_t v, size_t args) const {
 		return v % args;
 	}
-
-	//size_t bit(size_t v, size_t args) const {
-	//	return bits - 1 - v / args;
-	//}
 
 	template<typename T> spbdd_handle from_sym(
 		size_t arg, size_t args, int_t i, const T& altbl) const {
@@ -427,22 +400,6 @@ private:
 	void get_nums(const raw_term& t);
 	flat_prog to_terms(const raw_prog& p);
 
-	//// type inference related
-	//bool get_root_type(const alt_arg& type, tbl_arg& root) const;
-	//tbl_arg get_root_type(const tbl_arg& type) const;
-	//tbl_arg get_fix_root_type(const tbl_arg& type);
-	//bool map_type(tbl_arg from, tbl_arg to);
-	//void map_type(alt_arg from, tbl_arg to);
-	////void map_type(tbl_arg to);
-	//void propagate_types();
-	//void propagate_types(const tbl_arg& intype);
-	//void get_alt_types(const term& h, size_t altid);
-	//void get_alt_types(const term& h, const term_set& al, size_t altid);
-	////void get_types(const std::map<term, std::set<term_set>>& m);
-	//void get_prog_types(const flat_prog& p);
-	//void get_types(const flat_prog& p);
-	////void get_types(flat_prog& p);
-
 	bool equal_types(const table& tbl, const alt& a) const;
 	void get_rules(flat_prog m);
 	void get_facts(const flat_prog& m);
@@ -454,6 +411,7 @@ private:
 	std::vector<ntable> init_string_tables(lexeme rel, const std::wstring& s);
 	void load_string(
 		lexeme rel, const std::wstring& s, const std::vector<ntable> tbls);
+	// for loading 'facts', properly, if ever needed, leave it for now to test.
 	//std::set<term> load_string(lexeme r, const std::wstring& s);
 	lexeme get_var_lexeme(int_t i);
 	void add_prog(flat_prog m, const std::vector<struct production>&,
@@ -497,6 +455,7 @@ private:
 		uint_t b, spbdd_handle r, const bitsmeta& bm) const;
 	spbdd_handle full_adder(size_t var0, size_t var1, size_t n_vars,
 		uint_t b, const bitsmeta& bm) const;
+	// D: turned off till it's fixed/reworked for var bits.
 	//spbdd_handle shr(size_t var0, size_t n1, size_t var2, size_t n_vars);
 	//spbdd_handle shl(size_t var0, size_t n1, size_t var2, size_t n_vars, 
 	//	const bitsmeta& bm);

@@ -33,10 +33,6 @@ struct raw_prog;
 
 bool operator==(const lexeme& x, const lexeme& y);
 
-//static const std::set<std::wstring> str_bltins =
-//	{ L"alpha", L"alnum", L"digit", L"space", L"printable", L"count",
-//		L"rnd", L"print", L"lprint", L"halt", L"fail",
-//		L"bw_and", L"bw_or", L"bw_xor", L"bw_not", L"pw_add", L"pw_mult"};
 static const std::set<std::wstring> str_bltins = {
 	L"count", L"rnd", L"print", L"lprint", L"halt", L"fail",
 	L"bw_and", L"bw_or", L"bw_xor", L"bw_not", L"pw_add", L"pw_mult"
@@ -241,6 +237,7 @@ std::wostream& operator<<(std::wostream& os, const lexeme& l);
 std::wostream& operator<<(std::wostream& os, const production& p);
 lexeme lex(pcws s);
 lexemes prog_lex(cws s);
+int_t get_int_t(cws from, cws to);
 std::wstring file_read(std::wstring fname);
 std::wstring file_read_text(FILE *f);
 std::wstring file_read_text(std::wstring fname);

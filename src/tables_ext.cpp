@@ -21,9 +21,6 @@ typedef tuple<size_t, size_t, size_t, int_t, uint_t, uint_t> alumemo;
 map<alumemo, spbdd_handle> carrymemo;
 map<alumemo, spbdd_handle> addermemo;
 
-//#define mkchr(x) ((((int_t)x)<<2)|1)
-//#define mknum(x) ((((int_t)x)<<2)|2)
-//#define mksym(x) (int_t(x)<<2)
 #define mkchr(x) (int_t(x))
 #define mknum(x) (int_t(x))
 #define mksym(x) (int_t(x))
@@ -230,7 +227,7 @@ bool tables::isarith_handler(
 
 			//all types of addition handled by add_var
 			//XXX not working for ?x + ?x = 2
-
+			// TODO: compiles, runs, but doesn't actually work, needs work.
 			size_t args = 3;
 			bitsmeta bm = InitArithTypes(t, a, tab, args);
 			q = add_var_eq(0, 1, 2, args, bm);
@@ -238,6 +235,7 @@ bool tables::isarith_handler(
 
 		} break;
 
+		// D: commented out till fixed
 		//case SHR:
 		//{
 		//	//DBG(o::dbg() << "SHL handler ... " << endl;)

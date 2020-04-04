@@ -15,7 +15,6 @@
 #include "driver.h"
 using namespace std;
 
-//#define un_mknum(x) (int_t(x)>>2)
 #define un_mknum(x) (int_t(x))
 
 bool operator<(const db_t::const_iterator& x, const db_t::const_iterator& y) {
@@ -77,13 +76,12 @@ void lp::get_trees() {
 void driver::get_trees(wostream& os, const term& root,
 	const map<term, vector<term>>& m, set<term>& done) {
 	if (!done.emplace(root).second) return;
-	// un_mknum(arg);
 	// D: TODO: this will no longer work (>>2), we need a corresponding bm /type
 	for (int_t i : root.args())
-		if (i & 1) os << (wchar_t)un_mknum(i); // (i>>2)
-		else if (i & 2) os << (int_t)un_mknum(i); //(i>>2);
+		if (i & 1) os << (wchar_t)un_mknum(i);
+		else if (i & 2) os << (int_t)un_mknum(i);
 		else if ((size_t)un_mknum(i) < dict.nsyms()) os << dict.get_sym(i);
-		else os << L'[' << un_mknum(i) << L']'; // (i>>2)
+		else os << L'[' << un_mknum(i) << L']';
 	auto it = m.find(root);
 	if (it == m.end()) return;
 	for (auto x : it->second) get_trees(os, x, m, done);

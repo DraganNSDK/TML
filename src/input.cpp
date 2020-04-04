@@ -299,14 +299,18 @@ bool raw_term::parse(const lexemes& l, size_t& pos, const raw_prog& prog) {
 	//XXX: review for "-"
 	nargs = 0;
 	bool isarg = false; // basically telling us whether previous elem was an arg
-	// D: why was '<' a terminator? (only in directive). Removed, messes up LT.
 	// these are the term terminators, ':' is not on its own but if :- or :=
-	//while (true) {
 	while (!wcschr(L".,;{}-", *l[pos][0])) { // L".:,;{}|&-<"
 		// check if : is actually a terminator or the :type[bits]
 		if (L':' == *l[pos][0])
 			if (L'-' == l[pos][0][1] || L'=' == l[pos][0][1] || !isarg)
 				break;
+		// -> and <-> multichar terminators
+		if (L'-' == *l[pos][0] && L'>' == l[pos][0][1])
+			break;
+		if (L'<' == *l[pos][0] && L'-' == l[pos][0][1] && L'>' == l[pos][0][2])
+			break;
+
 		if (e.emplace_back(), !e.back().parse(l, pos)) return false;
 		else if (pos == l.size())
 			parse_error(input::source[1], err_eof, s[0]);

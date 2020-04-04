@@ -12,18 +12,15 @@
 // modified over time by the Author.
 #include "dict.h"
 #include "err.h"
+#include "input.h"
 using namespace std;
 
-//#define mkchr(x) ((((int_t)x)<<2)|1)
-//#define mknum(x) ((((int_t)x)<<2)|2)
-//#define mksym(x) (int_t(x)<<2)
-//#define un_mknum(x) (int_t(x)>>2)
 #define mkchr(x) (int_t(x))
 #define mknum(x) (int_t(x))
 #define mksym(x) (int_t(x))
 #define un_mknum(x) (int_t(x))
 
-int_t get_int_t(cws from, cws to); // input.cpp, TODO: put in header
+//int_t get_int_t(cws from, cws to); // input.cpp, TODO: put in header
 
 dict_t::dict_t() : op(get_lexeme(L"(")), cl(get_lexeme(L")")) {}
 

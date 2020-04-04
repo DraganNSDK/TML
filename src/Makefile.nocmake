@@ -1,6 +1,6 @@
 CXXFLAGS = -W -Wall -Wpedantic -otml -std=c++1z -DGIT_DESCRIBED -ggdb3 #-O3 -flto #-ggdb3
 CXX = clang++-8 #g++
-OBJ = input.o driver.o tables.o bdd.o bitsmeta.o iterbdds.o infer_types.o dict.o output.o transform.o print_prolog.o save_csv.o options.o print_souffle.o cqc.o binary.o main.o proof.o
+OBJ = input.o driver.o tables.o bdd.o bitsmeta.o iterbdds.o infer_types.o types.o dict.o output.o transform.o print_prolog.o save_csv.o options.o print_souffle.o cqc.o binary.o main.o proof.o
 SRC= cqc.cpp bdd.h bitsmeta.h iterbdds.h infer_types.h types.h dict.cpp driver.h input.cpp options.cpp output.h print_souffle.cpp tables.h transform.cpp dict.h err.h input.h options.h save_csv.cpp term.h bdd.cpp bitsmeta.cpp iterbdds.cpp infer_types.cpp types.cpp defs.h driver.cpp main.cpp output.cpp print_prolog.cpp tables.cpp TML.h
 
 all: $(OBJ)

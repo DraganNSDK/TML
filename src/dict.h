@@ -20,14 +20,14 @@ class dict_t {
 	typedef std::map<lexeme, int_t, lexcmp> dictmap;
 	dictmap syms_dict, vars_dict, rels_dict, bltins_dict, types_dict;
 	std::vector<lexeme> syms, rels, bltins;
-	std::vector<arg_type> types; // std::vector<ttype> types;
+	std::vector<arg_type> types;
 	std::set<lexeme, lexcmp> strs_extra;
 public:
 	dict_t();
 	dict_t(const dict_t& d) : syms_dict(d.syms_dict), vars_dict(d.vars_dict),
 		rels_dict(d.rels_dict), bltins_dict(d.bltins_dict), 
 		types_dict(d.types_dict), syms(d.syms), rels(d.rels), bltins(d.bltins),
-		types(d.types), op(d.op), cl(d.cl) { // strs_extra(d.strs_extra), 
+		types(d.types), op(d.op), cl(d.cl) {
 		DBG(assert(false);); // we shouldn't be copying, use move instead
 		for (const lexeme& c : d.strs_extra) { 
 			wstr r = wcsdup((wstr)c[0]);

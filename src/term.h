@@ -23,8 +23,6 @@ struct term : public ints {
 	size_t orderid = 0, nvars = 0;
 	// D: TODO: builtins are very different, handle as a same size union struct?
 	int_t idbltin = -1; // size_t bltinsize;
-	// D: there's a dillema how to store types (where, how much, w/ any arg or 
-	// just for vars). Just w/ vars for the moment, but I'm not sure.
 	argtypes types;
 	ints nums;
 	term() {}

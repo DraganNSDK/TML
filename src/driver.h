@@ -24,10 +24,6 @@
 #include "output.h"
 #include "options.h"
 
-//#define mkchr(x) ((((int_t)x)<<2)|1)
-//#define mknum(x) ((((int_t)x)<<2)|2)
-//#define mksym(x) (int_t(x)<<2)
-//#define un_mknum(x) (int_t(x)>>2)
 #define mkchr(x) (int_t(x))
 #define mknum(x) (int_t(x))
 #define mksym(x) (int_t(x))

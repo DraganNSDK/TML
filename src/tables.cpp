@@ -43,6 +43,7 @@ wstring _unquote(wstring str) { unquote(str); return str; }
 #ifdef DEBUG
 vbools tables::allsat(spbdd_handle x, size_t, const bitsmeta& bm) const {
 //	const size_t args = siglens[tab];
+	// TODO:
 	// D: this no longer works, args * bits and (k+1)*bits below, bits too etc.
 	// bits * args => bm.args_bits
 	throw 0;
@@ -66,8 +67,7 @@ spbdd_handle tables::leq_const(
 	// D: should we cache this too, why not, I guess there could be many c-s?
 	//static ekcmemo x;
 	//static map<ekcmemo, spbdd_handle>::const_iterator it;
-	//size_t bits = bm.types[arg].bitness;
-	//if ((it = leqcmemo.find(x = { c, arg, args, bits })) != leqcmemo.end())
+	//if ((it = leqcmemo.find(x = { c, arg, args, bm.vbits })) != leqcmemo.end())
 	//	return it->second;
 	//spbdd_handle r = leq_const(c, arg, args, bits, bits, bm);
 	//return leqcmemo.emplace(x, r), r;
@@ -123,8 +123,6 @@ spbdd_handle tables::leq_var(size_t arg1, size_t arg2, size_t args,
 	// D: TODO: is this logic ok? we match bit by bit, if # bits differ => false
 	// or should we actually throw an error here?
 	if (bits != bits2) return hfalse;
-	//if ((it = leqmemo.find(x = { arg1, arg2, args, bits })) != leqmemo.end())
-	//	return it->second;
 	DBG(assert(!bm.vbits.empty() && bm.bitsfixed););
 	if ((it = leqmemo.find(x = { arg1, arg2, args, bm.vbits })) != leqmemo.end())
 		return it->second;
@@ -296,7 +294,7 @@ spbdd_handle table::init_bits() {
 	size_t args = len;
 	bm.init(dict);
 
-	// this below is completely useless, we'll overwrite w/ facts (if no facts?)
+	// this below is completely useless for 'no facts', we'll overwrite w/ facts
 
 	// this is for 2nd prog pass, if init and none changed, don't destroy .t
 	// problem is what if smth changed? we should only init added bits, keep .t
@@ -366,9 +364,6 @@ spbdd_handle tables::from_sym(
 	static skmemo x;
 	static map<skmemo, spbdd_handle>::const_iterator it;
 	size_t bits = bm.types[arg].bitness; // this is now 'bits' (per arg)
-	// temp turn off to trace the universe/bdd issues
-	//if ((it = smemo.find(x = { i, arg, args, bits })) != smemo.end())
-	//	return it->second;
 	// fix: cache on full bits-vector not just arg bits as pos-s need to be same
 	DBG(assert(!bm.vbits.empty() && bm.bitsfixed););
 	if ((it = smemo.find(x = { i, arg, args, bm.vbits })) != smemo.end())
@@ -387,8 +382,6 @@ spbdd_handle tables::from_sym_eq(
 	size_t bits2 = bm.types[arg2].bitness;
 	// D: TODO: is this logic ok? we match bit by bit, if bits differ it's false
 	if (bits != bits2) return hfalse;
-	//if ((it = ememo.find(x = { arg1, arg2, args, bits })) != ememo.end())
-	//	return it->second;
 	DBG(assert(!bm.vbits.empty() && bm.bitsfixed););
 	if ((it = ememo.find(x = { arg1, arg2, args, bm.vbits })) != ememo.end())
 		return it->second;
@@ -846,7 +839,7 @@ void form::printnode(int lv) {
 void tables::out(wostream& os) const {
 	//strs_t::const_iterator it;
 
-	// sort tables - for easier comparing (new vs old code)
+	// sort tables - for easier comparing (new vs old code), leave it for now.
 	//uints otbls = perm_init(tbls.size()); // std::transform?
 	//sort(otbls.begin(), otbls.end(), [this](const uint_t& x, const uint_t& y){
 	//	lexeme l = dict.get_rel(get<0>(tbls[x].s));
@@ -856,11 +849,6 @@ void tables::out(wostream& os) const {
 	//	if (cmp == 0)
 	//		return llen < rlen;
 	//	return cmp < 0;
-	//	//cmp < 0
-	//	//return wcsncasecmp(l[0], r[0], min(llen, rlen)) < 0;
-	//	//return lexeme2str(l) < lexeme2str(r);
-	//	//if (l[1]-l[0] != r[1]-r[0]) return l[1]-l[0] > r[1]-r[0];
-	//	//return wcsncmp(l[0], r[0], l[1]-l[0]) > 0;
 	//	});
 	//for (size_t i = 0; i != otbls.size(); ++i)
 	//	out(os, tbls[otbls[i]].tq, otbls[i]);
@@ -880,9 +868,9 @@ void tables::out(const rt_printer& f) const {
 void tables::out(wostream& os, spbdd_handle x, ntable tab) const {
 	//out(x, tab, [&os](const raw_term& rt) { os << rt << L'.' << endl; });
 
+	// we're sorting tuples so it's not random, this is more natural, consistent
 	const table& tbl = tbls.at(tab);
 	const bitsmeta& bm = tbl.bm;
-	//set<term, cmptermrev> r;
 	set<term> r;
 	decompress(x && tbls.at(tab).tq, tab, [&r, &bm](const term& t) {
 		r.insert(t);
@@ -932,7 +920,7 @@ void tables::decompress(spbdd_handle x, ntable tab, const cb_decompress& f,
 	const bitsmeta& bm = tbl.bm;
 	allsat_cb(x/*&&ts[tab].tq*/, bm.args_bits, //len * bits,
 		[tab, &f, len, &bm, this](const bools& p, int_t DBG(y)) {
-		//DBG(assert(abs(y) == 1);)
+		//DBG(assert(abs(y) == 1);) // D: not sure about this, turn on again?
 #ifdef DEBUG
 		if (abs(y) != 1) {
 			wcout << L"decompress:   \t" << y << endl;
@@ -1104,6 +1092,7 @@ void tables::init_varmap(alt& a, const term& h, const term_set& al) {
 							types[arg] = tbls[t.tab].bm.types[n];
 					}
 				}
+				// TODO: type inference is used now instead, remove the above?
 				if (t.tab == -1) continue; // skip eq and stuff, for now
 			}
 	DBG(assert(a.varslen == ats.size() && a.varslen == types.size()););
@@ -1343,6 +1332,7 @@ flat_prog tables::to_terms(const raw_prog& p) {
 int_t freeze(vector<term>& v, int_t m = 0) {
 	map<int_t, int_t> p;
 	map<int_t, int_t>::const_iterator it;
+	// varbits: we need to go through 'types' now, anything we do
 	for (const term& t : v) 
 		for (size_t n = 0; n != t.size(); ++n)
 			if (t.types[n].type == base_type::INT)
@@ -1598,6 +1588,10 @@ wostream& tables::print_dict(wostream& os) const {
 	return os << dict;
 }
 
+/* 
+ altid is now needed as we go through alts twice, during inference and here 
+ (i.e. we need to sync/match individual alts for type inference purposes)
+*/
 void tables::get_alt(
 	const term_set& al, const term& h, alt_set& as, size_t altid) {
 	alt a;
@@ -1815,26 +1809,9 @@ void tables::set_priorities(const flat_prog& p) {
 	}
 }*/
 
-//vector<term> tables::interpolate(vector<term> x, set<int_t> v) {
-//	term t;
-//	for (size_t k = 0; k != x.size(); ++k)
-//		for (size_t n = 0; n != x[k].size(); ++n)
-//			if (has(v, x[k][n]))
-//				t.push_back(x[k][n]), v.erase(x[k][n]);
-//	return t.tab = create_tmp_rel(t.size()), x.insert(x.begin(), t), x;
-//}
-//set<int_t> intersect(const set<int_t>& x, const set<int_t>& y) {
-//	set<int_t> r;
-//	set_intersection(x.begin(), x.end(), y.begin(), y.end(),
-//		inserter(r, r.begin()));
-//	return r;
-//}
-
 vector<term> tables::interpolate(
 	vector<term> x, set<arg_info> v, const map<int_t, arg_info>& mvars) {
 	term t;
-	//argtypes types;
-	//ints nums;
 	set<int_t> done;
 	for (size_t k = 0; k != x.size(); ++k)
 		for (size_t n = 0; n != x[k].size(); ++n)
@@ -1844,8 +1821,6 @@ vector<term> tables::interpolate(
 				t.push_back(x[k][n]);
 				t.types.push_back(info.type);
 				t.nums.push_back(info.num);
-				//types.push_back(info.type);
-				//nums.push_back(info.num);
 				//v.erase(x[k][n]);
 				done.insert(x[k][n]);
 				//mvars.erase(x[k][n]);
@@ -1862,7 +1837,6 @@ set<arg_info> intersect(const set<arg_info>& x, const set<arg_info>& y) {
 	return r;
 }
 
-//void tables::transform_bin(flat_prog& p) {
 flat_prog tables::transform_bin(const flat_prog& q) {
 	//const flat_prog q = move(p);
 	flat_prog p;
@@ -1891,8 +1865,6 @@ flat_prog tables::transform_bin(const flat_prog& q) {
 			//prog_add_rule(p, x); continue; }
 		for (const term& t : x) {
 			getvars(t, vars, mvars);
-			//getvars(t, v);
-			//vars.push_back(move(v));
 		}
 		while (!(m = getterms(x)).empty()) {
 			for (size_t i : m) r.push_back(x[i]);
@@ -1905,8 +1877,6 @@ flat_prog tables::transform_bin(const flat_prog& q) {
 			r = interpolate(r, move(v), mvars);
 			x.push_back(r[0]);
 			getvars(r[0], vars, mvars);
-			//getvars(r[0], v);
-			//vars.push_back(move(v));
 			p.insert(move(r));
 		}
 		p.insert(move(x)), vars.clear(), mvars.clear();
@@ -1943,421 +1913,6 @@ void tables::cqc(flat_prog& p) {
 	for (const vector<term>& r : p)
 		v.emplace_back(r), cqc_minimize(v.back());
 }*/
-
-///* 
-//maps tbl to tbl, it should always be from > to, if not swap.
-//(we always call map_type w/ rvalues, we don't care if they change)
-//{ table/rule, alt|-1, arg } // nothing for body|term?
-//*/
-//bool tables::map_type(tbl_arg from, tbl_arg to) {
-//	if (from == to) return true; // do nothing
-//	bool ret = true;
-//	if (from < to) {
-//		swap(from, to);
-//		ret = false; // it's flipped
-//	}
-//	map_type({ from.tab, -1, from.arg }, { to.tab, to.arg });
-//	return ret;
-//}
-//
-///*
-//maps alt to tbl.
-//(we always call map_type w/ rvalues, we don't care if they change)
-//*/
-//void tables::map_type(alt_arg from, tbl_arg to) {
-//	DBG(assert(from.alt != -1 || tbl_arg{ from } > to););
-//	DBG(assert(to.arg < tbls[to.tab].bm.get_args()););
-//	//wcout << L"map(a->t):" << from << L"," << to << L"," << endl;
-//#ifdef DEBUG
-//	if (from.alt != -1) {
-//		alt& a = altstyped[{from.tab, size_t(from.alt)}];
-//		if (!a.bm.types.empty())
-//			assert(from.arg < a.bm.get_args());
-//	}
-//	else assert(from.arg < tbls[from.tab].bm.get_args()); 
-//#endif
-//	to = get_root_type(to);
-//	alt_arg toalt(to);
-//	set<alt_arg>& related = minvtyps[to]; // totbl
-//	if (related.empty()) related.insert(toalt); // add self if first
-//	// if we're mapping a tbl/arg, and it already has an entry, merge them...
-//	if (from.alt == -1) {
-//		auto it = minvtyps.find(tbl_arg{from});
-//		if (it != minvtyps.end()) {
-//			DBG(assert(tbl_arg{ from } != to););
-//			const set<alt_arg>& old = it->second;
-//			// just copy, can't easily move a set and it's cheap (alt_arg)
-//			related.insert(old.begin(), old.end());
-//			minvtyps.erase(tbl_arg{ from });
-//		}
-//	}
-//	related.insert(from);
-//
-//	tbl_arg root{-1, 0};
-//	if (get_root_type(from, root) && root != to) { // if(root!=from && root!=to)
-//		if (root < to) swap(root, to);
-//		map_type(root, to);
-//	}
-//
-//	mtyps.emplace(from, to);
-//}
-//
-///*
-// This actually syncs all types, once type inference is done (get_types)
-//*/
-//void tables::propagate_types() {
-//	for (auto& it : minvtyps) {
-//		const tbl_arg& type = it.first;
-//		auto& bm = tbls[type.tab].bm;
-//		DBG(assert(type == get_root_type(type)););
-//		//if (type != get_root_type(type)) {
-//		//	wcout << L"type!=root_type:" << 
-//		//		type << L"," << get_root_type(type) << L"," << endl;
-//		//}
-//		DBG(assert(it.second.empty() || type == get_root_type(type)););
-//		DBG(assert(type.arg < bm.get_args()););
-//		//propagate_types(type);
-//		for (const alt_arg& atype : it.second) {
-//			if (atype.alt == -1) {
-//				auto& tblbm = tbls[atype.tab].bm;
-//				DBG(assert(atype.arg < tblbm.get_args()););
-//				bitsmeta::sync_types(
-//					tblbm.types[atype.arg], bm.types[type.arg],
-//					tblbm.nums[atype.arg], bm.nums[type.arg]);
-//			} else {
-//				// alt should be set up and present in the map
-//				tbl_arg altkey{atype.tab, size_t(atype.alt)};
-//				DBG(assert(has(altstyped, altkey)););
-//				alt& a = altstyped[altkey];
-//				DBG(assert(atype.arg < a.bm.get_args()););
-//				bitsmeta::sync_types(
-//					a.bm.types[atype.arg], bm.types[type.arg],
-//					a.bm.nums[atype.arg], bm.nums[type.arg]);
-//			}
-//		}
-//	}
-//}
-//
-///*
-// Temporary types sync while doing get_types, likely to be deprecated
-//*/
-//void tables::propagate_types(const tbl_arg& intype) {
-//	// TODO: if we remove this method, save/move this 1st part as that's needed
-//	tbl_arg type = get_root_type(intype);
-//	auto& bm = tbls[type.tab].bm;
-//	if (type != intype) {
-//		// in a nutshell, input tbl/arg should be in sync, so sync w/ it
-//		auto& inbm = tbls[intype.tab].bm;
-//		DBG(assert(type.arg < bm.get_args()););
-//		DBG(assert(intype.arg < inbm.get_args()););
-//		bitsmeta::sync_types(
-//			inbm.types[intype.arg], bm.types[type.arg],
-//			inbm.nums[intype.arg], bm.nums[type.arg]);
-//	}
-//	// we can cut this part off I think?
-//	//return;
-//	//map<tbl_arg, set<alt_arg>>::const_iterator it;
-//	//if ((it = minvtyps.find(type)) == minvtyps.end()) return;
-//	////set<alt_arg>& related = it->second;
-//	//for (const alt_arg& atype : it->second) {
-//	//	if (atype.alt == -1) {
-//	//		auto& tblbm = tbls[atype.tab].bm;
-//	//		DBG(assert(atype.arg < tblbm.get_args()););
-//	//		bitsmeta::sync_types(
-//	//			tblbm.types[atype.arg], bm.types[type.arg],
-//	//			tblbm.nums[atype.arg], bm.nums[type.arg]);
-//	//	} else {
-//	//		map<tbl_arg, alt>::iterator ait; //const_iterator 
-//	//		// it's possible that altstyped isn't yet uptodate, alt's not in yet
-//	//		if ((ait = altstyped.find({ atype.tab, size_t(atype.alt) }))
-//	//			== altstyped.end())
-//	//			continue; // return;
-//	//		bitsmeta& altbm = ait->second.bm; // *ait->second->bm;
-//	//		if (altbm.types.empty()) continue; // not init yet, could happen
-//	//		DBG(assert(atype.arg < altbm.get_args()););
-//	//		bitsmeta::sync_types(
-//	//			altbm.types[atype.arg], bm.types[type.arg],
-//	//			altbm.nums[atype.arg], bm.nums[type.arg]);
-//	//	}
-//	//}
-//}
-//
-//bool tables::get_root_type(const alt_arg& type, tbl_arg& root) const {
-//	map<alt_arg, tbl_arg>::const_iterator it;
-//	if ((it = mtyps.find(type)) != mtyps.end()) {
-//		DBG(assert(type.alt != -1 || it->second < tbl_arg{type}););
-//		DBG(assert(it->second.arg < tbls[it->second.tab].bm.get_args()););
-//		root = get_root_type(it->second);
-//		return true;
-//	}
-//	return false; // type;
-//}
-//tbl_arg tables::get_root_type(const tbl_arg& type) const {
-//	tbl_arg root{-1, 0};
-//	if (get_root_type(alt_arg{ type }, root))
-//		return root;
-//	return type;
-//}
-//
-//tbl_arg tables::get_fix_root_type(const tbl_arg& type) {
-//	auto it = mtyps.find(alt_arg{type});
-//	if (it != mtyps.end()) {
-//		DBG(assert(it->second < type););
-//		tbl_arg root = get_root_type(it->second);
-//		if (root != it->second)
-//			mtyps.emplace(alt_arg{type}, root);
-//		return root;
-//	}
-//	return type;
-//}
-//
-///* for headers only (w/ vars), simplified / optimized version */
-//void tables::get_alt_types(const term& h, size_t /*altid*/) {
-//	varmap m;
-//	for (size_t n = 0; n != h.size(); ++n) {
-//		if (h[n] < 0) {
-//			if (!has(m, h[n]))
-//				m.emplace(h[n], n);
-//			else
-//				map_type({ h.tab, m[h[n]] }, { h.tab, n });
-//		}
-//		// for facts, no need to map alt, just header
-//	}
-//}
-///*
-// Go through alt/terms and do 2 things a) sync or b) map types
-// - sync is important to keep the 'root table' in sync (and build up/merge types)
-// - map_type creates a hierarchy of types, matches and does the 'type inference'
-//*/
-//void tables::get_alt_types(const term& h, const term_set& al, size_t altid) {
-//	alt& a = altstyped[{ h.tab, size_t(altid) }]; // create, get ref, fill it in
-//	varmap m, mh;
-//	ints ats = (ints)h, nums = h.nums;
-//	argtypes types = h.types;
-//	// header types are already in sync w/ rule tbl's, just copy it to alt t-s
-//	a.varslen = h.size();
-//	for (size_t n = 0; n != h.size(); ++n) {
-//		if (h[n] < 0) {
-//			if (!has(m, h[n]))
-//				m.emplace(h[n], n),
-//				mh.emplace(h[n], n);
-//			else
-//				map_type({ h.tab, m[h[n]] }, { h.tab, n });
-//		}
-//		if (al.empty()) continue; // for facts, no need to map alt, just header
-//		map_type({ h.tab, int_t(altid), n }, { h.tab, n });
-//	}
-//	for (const term& t : al) {
-//		bool isbody = t.extype == term::REL;
-//		if (isbody) {}
-//		bitsmeta& bm = t.tab != -1 ? tbls[t.tab].bm : tbls[h.tab].bm; // tbl.bm;
-//		size_t tnums = 0;
-//		if (!t.empty() && !t.nums.empty())
-//			tnums = size_t(*max_element(t.nums.begin(), t.nums.end()));
-//		for (size_t n = 0; n != t.size(); ++n)
-//			if (t[n] < 0) {
-//				size_t arg;
-//				int_t harg = -1;
-//				if (!has(m, t[n])) {
-//					arg = a.varslen++;
-//					m.emplace(t[n], arg);
-//					ats.push_back(t[n]);
-//					types.push_back(t.types[n]);
-//					nums.push_back(t.nums[n]);
-//				}
-//				else {
-//					arg = m[t[n]];
-//					// check if header maps that var, to map tbl->tbl
-//					varmap::const_iterator it;
-//					if ((it = mh.find(t[n])) != mh.end()) 
-//						harg = it->second;
-//				}
-//				// sync alt w/ term, this is 1-way, nothing to map w/ (no bm)
-//				// - do we need even EQ types to be updated?
-//				// - we don't need to map_type to smth like EQ (non-body)?
-//				//term& rt = (term&)t; // hack to sync_types for nonbodies
-//				bitsmeta::sync_types( // const arg_type&
-//					types[arg], t.types[n], nums[arg], t.nums[n]);
-//				// we do need to sync both ways (even map) for e.g. ARITH ?
-//				switch (t.extype) {
-//				case term::ARITH:
-//				case term::EQ:
-//				case term::LEQ:
-//				{
-//					// a quick fix to give arith/eq/leq some type to work w/
-//					size_t bits = bitsmeta::BitScanR(tnums, 5) + 2;
-//					bitsmeta::sync_types(
-//						types[arg], {base_type::INT, bits}, nums[arg], 1<<bits);
-//					break;
-//				}
-//				default: break;
-//				}
-//
-//				if (t.tab == -1) {
-//					// if we're 'exiting' we need to sync types changes to root
-//					tbl_arg root{ -1, 0 };
-//					if (get_root_type({ h.tab, int_t(altid), arg }, root)) {
-//						bitsmeta& rbm = tbls[root.tab].bm;
-//						bitsmeta::sync_types(
-//							rbm.types[root.arg], types[arg],
-//							rbm.nums[root.arg], nums[arg]);
-//					}
-//					if (harg != -1 && root != tbl_arg{h.tab, size_t(harg)}) {
-//						bitsmeta& hbm = tbls[h.tab].bm;
-//						bitsmeta::sync_types(
-//							hbm.types[harg], types[arg],
-//							hbm.nums[harg], nums[arg]);
-//					}
-//					continue;
-//				}
-//
-//				bitsmeta::sync_types(
-//					types[arg], bm.types[n], nums[arg], bm.nums[n]);
-//				map_type({ h.tab, int_t(altid), arg }, { t.tab, n });
-//				if (harg != -1) {
-//					// we don't really need this map do we? already done above
-//					map_type({h.tab, int_t(altid), arg}, {h.tab, size_t(harg)});
-//					// rule/tbl => body/tbl
-//					if (!map_type({ h.tab, size_t(harg) }, { t.tab, n })) {
-//						// false==flipped, root is rule/tbl, uptodate it
-//						// we only need to keep the root up-to-date w/ latest
-//						bitsmeta& hbm = tbls[h.tab].bm;
-//						bitsmeta::sync_types(
-//							hbm.types[harg], bm.types[n],
-//							hbm.nums[harg], bm.nums[n]);
-//					}
-//				}
-//				// propagate to all related now - this is likely superfluous...
-//				propagate_types({ t.tab, n });
-//			}
-//		// process builtins, eq-s etc. that have special type mapping rules
-//		// do it 'outside the loop' as builtins often need to calc as a whole
-//		if (t.extype == term::REL) {}
-//		else if (t.extype == term::BLTIN) {
-//			lexeme bltintype = dict.get_bltin(t.idbltin);
-//			int_t bltinout = t.back(); // for those that have ?out
-//			if (bltintype == L"count") {
-//				size_t arg = m[bltinout];
-//				// sync types to set some meaningful value for the arg, if any
-//				// there's no table behind so nothing to sync or map
-//				bitsmeta::sync_types( // const arg_type&
-//					types[arg], {base_type::INT, 10}, nums[arg], 1024); //?
-//				// and should we map? not for now, ?out is likely 'on its own'
-//				// but if any other rels use it we'd need to propagate this?
-//				// would that be done automatically?
-//				// just update the main table if this arg is in the header...
-//				auto it = mh.find(bltinout);
-//				if (it != mh.end()) {
-//					size_t harg = it->second;
-//					bitsmeta& hbm = tbls[h.tab].bm;
-//					bitsmeta::sync_types(
-//						types[arg], hbm.types[harg], nums[arg], hbm.nums[harg]);
-//				}
-//			}
-//			// TODO: add other builtins type support
-//		}
-//		else if (t.extype == term::ARITH) {
-//			//size_t tnums = size_t(max(t.nums.begin(), t.nums.end()));
-//			//size_t bits = bitsmeta::BitScanR(tnums, 5) + 2; // min is 7 bits ?
-//			//for (size_t n = 0; n != t.size(); ++n)
-//			//	if (t[n] < 0) {
-//			//		size_t arg = m[t[0]];
-//			//		// what to set for bitness here? we have no consts, hmm
-//			//		//if (types[arg].type == base_type::NONE) // only if nothing
-//			//		bitsmeta::sync_types( // const arg_type&
-//			//			types[arg], {base_type::INT, bits}, nums[arg], 1<<bits);
-//			//	}
-//		}
-//		// TODO: we can optimize this based on eq/neg/leq and consts if any
-//		// simple rule atm: var has the min bits of the largest const 
-//		else if (t.extype == term::EQ || t.extype == term::LEQ) {
-//			//DBG(assert(t.size() == 2););
-//			////size_t bits = 5; // ?
-//			//size_t tnums = size_t(max(t.nums.begin(), t.nums.end()));
-//			//// if(tnums > 0)
-//			//size_t bits = bitsmeta::BitScanR(tnums, 5) + 1; // min is 6 bits ?
-//			//if (t[0] < 0) {
-//			//	size_t arg = m[t[0]];
-//			//	// what to set for bitness here? we have no consts, hmm
-//			//	//if (types[arg].type == base_type::NONE) // only if nothing
-//			//	bitsmeta::sync_types( // const arg_type&
-//			//		types[arg], {base_type::INT, bits}, nums[arg], 1 << bits);
-//			//}
-//			//if (t[1] < 0) {
-//			//	size_t arg = m[t[1]];
-//			//	//if (types[arg].type == base_type::NONE) // only if nothing
-//			//	bitsmeta::sync_types( // const arg_type&
-//			//		types[arg], {base_type::INT, bits}, nums[arg], 1 << bits);
-//			//}
-//		}
-//	}
-//
-//	DBG(assert(a.varslen == ats.size() && a.varslen == types.size()););
-//	a.vm = m;
-//	a.inv = varmap_inv(a.vm);
-//	a.bm = bitsmeta(types.size());
-//	a.bm.set_args(ats, types, nums);
-//	a.bm.init(dict); // D: Q: for tbl we also 0 each bit into .t bdd, & alts?
-//
-//	// not needed, we're now updating as needed or at the end
-//	// note: still needed, or init all tables before get_types
-//	//tbls[h.tab].bm.update_types(a.bm.types, a.bm.nums);
-//}
-//
-///*
-// Type inference
-//*/
-////void tables::get_types(flat_prog& p) {
-//void tables::get_types(const flat_prog& p) {
-//	// TODO: we're not processing prog_add_rule etc. (does nothing), keep an eye
-//	// (as get_types needs to be in sync w/ the get_rules (same order of t-s...)
-//#ifndef TRANSFORM_BIN_DRIVER
-//	// we need to keep get_types in sync w/ get_rules (same terms, ordering)
-//	//if (bin_transform) transform_bin(p);
-//	if (bin_transform) {
-//		flat_prog q(move(transform_bin(p)));
-//		map<ntable, ntable> mt;
-//		// pBin: save all post-processing prog/terms, reuse in get_rules
-//		for (const auto& x : q) prog_add_rule(pBin, mt, x);
-//		replace_rel(move(mt), pBin);
-//		set_priorities(pBin);
-//		get_prog_types(pBin);
-//		//get_prog_types(move(transform_bin(p)));
-//		return;
-//	}
-//#endif
-//	get_prog_types(p);
-//}
-//
-//void tables::get_prog_types(const flat_prog & p) {
-//	// TODO: optimize later, for now make a map like we're doing it in get_rules
-//	// (it's too late in get_rules, and we need to sort/termset, also alts etc.)
-//	map<term, set<term_set>> m;
-//	for (const auto& x : p)
-//		if (x.size() == 1) m[x[0]] = {};
-//		else m[x[0]].insert(term_set(x.begin() + 1, x.end()));
-//
-//	set<rule> rs;
-//	//map<ntable, size_t> altids4types;
-//	for (pair<term, set<term_set>> x : m) {
-//		// (don't) let facts take part in inferring the types
-//		//if (x.second.empty()) continue;
-//		term& t = x.first; // const ?
-//		DBG(assert(t.tab != -1););
-//		table& tbl = tbls[t.tab];
-//		// no need to update here, just update bm
-//		// nothing to map_type here, only tbl->tbl or alt->tbl, terms dont count
-//		bitsmeta::sync_types(tbl.bm, t.types, t.nums); //t);
-//		// - altids moved to member, to support multiple passes, e.g. ~r() :-
-//		// - negated headers will have different sig and be new entry in the map
-//		size_t& n = altids4types[t.tab];
-//		if (x.second.empty() && doemptyalts && t.nvars != 0)
-//			get_alt_types(t, n++);
-//		else
-//			for (const term_set& al : x.second)
-//				get_alt_types(t, al, n++); // get_alt(al, t, as);
-//	}
-//}
 
 /* compare tbl and alt types (given they're different in size, start is same) */
 bool tables::equal_types(const table& tbl, const alt& a) const {
@@ -2408,10 +1963,12 @@ void tables::get_rules(flat_prog p) {
 	alt* aa;
 	//map<ntable, size_t> altids;
 	// TODO: maybe we shouldn't clear? as altids are for all progs
+	// TEST: this w/ addbit and multiple progs, might not work
 	altordermap.clear();
 	for (pair<term, set<term_set>> x : m) {
 		const term& t = x.first;
 		if (x.second.empty()) {
+			// D: we need to process headers-only, for vars/types sync reasons.
 			if (doemptyalts && t.nvars != 0)
 				altids[t.tab]++;
 			continue;
@@ -2469,6 +2026,7 @@ void tables::get_rules(flat_prog p) {
 	}
 }
 
+/* we have to split load_string to pre-table-init and post-table-init */
 vector<ntable> tables::init_string_tables(lexeme r, const wstring& s) {
 	int_t rel = dict.get_rel(r);
 	str_rels.insert(rel);
@@ -2559,9 +2117,6 @@ void tables::load_string(
 	b1.push_back(tbl1.tq);
 	b2.push_back(tbl2.tq);
 
-	//t = from_raw_term(x, true), t.goal = r.type == raw_rule::GOAL,
-	//	m.insert({ t }), get_nums(x);
-
 	for (int_t n = 0; n != (int_t)s.size(); ++n) {
 		// a temp hack (to inject tab), do this properly, separate terms etc.
 		t.tab = tab1;
@@ -2598,6 +2153,9 @@ void tables::load_string(
 	if (optimize) measure_time_end();
 }
 
+/*
+ this is alternative impl which creates facts as for any  other tbl, test it
+*/
 //set<term> tables::load_string(lexeme r, const wstring& s) {
 //	int_t rel = dict.get_rel(r);
 //	str_rels.insert(rel);
@@ -2991,10 +2549,6 @@ void tables::add_prog(flat_prog m, const vector<production>& g, bool mknums) {
 	////while (max(max(_nums, _chars), _syms) >= (1 << (_bits - 2))) ++_bits;
 	//while (max(max(_nums, _chars), _syms) >= (1 << _bits)) ++_bits;
 
-	// TODO: do grammar before anything else (as it sets tables, reorgs things)
-	// what about load_string? also adds tables, but that's highly unrelated??
-	// (that's a problem as it sets bdd-s as well, we can't do that till inited)
-
 	// only one string is supported (transform_grammar), make this map if more
 	vector<ntable> strtabs;
 	DBG(assert(strs.size() <= 1););
@@ -3162,7 +2716,6 @@ auto handle_cmp = [](const spbdd_handle& x, const spbdd_handle& y) {
 	return x->b < y->b;
 };
 
-//static double tbodies, tandmany, tpermute;
 spbdd_handle tables::alt_query(alt& a, size_t /*DBG(len)*/) {
 /*	spbdd_handle t = htrue;
 	for (auto x : a.order) {
@@ -3208,8 +2761,6 @@ spbdd_handle tables::alt_query(alt& a, size_t /*DBG(len)*/) {
 			x = from_sym(a.vm.at(bltinout), a.varslen, mknum(cnt), a); // .bm);
 			v1.push_back(x);
 			o::dbg() << L"alt_query (cnt):" << cnt << L"" << endl;
-			//if (cnt != cnt0)
-			//	o::dbg() << L"(cnt0 != cnt):" << cnt0 << L", " << cnt << endl;
 		}
 		else if (bltintype == L"rnd") {
 			DBG(assert(a.bltinargs.size() == 3););
@@ -3254,6 +2805,7 @@ spbdd_handle tables::alt_query(alt& a, size_t /*DBG(len)*/) {
 				else              os << dict.get_sym(arg);
 			} while (n < a.bltinargs.size());
 		}
+		// D: turned off till this is reworked for varbits
 		//else if (t_arith_op op = get_bwop(bltintype); op != t_arith_op::NOP) {
 		//	size_t arg0_id = a.vm.at(bltininputs[0]);
 		//	size_t arg1_id = a.vm.at(bltininputs[1]);
@@ -3330,13 +2882,12 @@ char tables::fwd() noexcept {
 	bool b = false;
 	// header builtins support: this tracks if any recent changes/commits
 	for (ntable tab = 0; (size_t)tab != tbls.size(); ++tab) {
-		//break;
 		table& tbl = tbls[tab];
 		bool changes = tbl.commit(DBG(0)); // bits));
 		b |= changes;
 
-		if (tbl.unsat) return unsat = true;
-		continue;
+		//if (tbl.unsat) return unsat = true;
+		//continue;
 
 		if (!changes && tbl.idbltin > -1) {
 			//lexeme bltintype = dict.get_bltin(tbl.idbltin);
@@ -3453,11 +3004,11 @@ bool tables::run_prog(const raw_prog& p, const strs_t& strs, size_t steps,
 	return r;
 }
 
-tables::tables(dict_t d, bool bproof, bool optimize, bool bin_transform,
-	bool print_transformed, bool autotype_, bool dumptype_, bool addbit_,
+tables::tables(dict_t dict_, bool bproof_, bool optimize_, bool bin_transform_,
+	bool print_transformed_, bool autotype_, bool dumptype_, bool addbit_,
 	bool bitsfromright_) :
-	dict(move(d)), bproof(bproof), optimize(optimize), 
-	bin_transform(bin_transform), print_transformed(print_transformed), 
+	dict(move(dict_)), bproof(bproof_), optimize(optimize_),
+	bin_transform(bin_transform_), print_transformed(print_transformed_),
 	autotype(autotype_), dumptype(dumptype_), testaddbit(addbit_),
 	doemptyalts(true), inference(*this) {
 	// just a quick fix, we should have some global settings or something
@@ -3465,7 +3016,6 @@ tables::tables(dict_t d, bool bproof, bool optimize, bool bin_transform,
 }
 
 tables::~tables() {
-	//if (optimize) delete &dict;
 	while (!bodies.empty()) {
 		body *b = *bodies.begin();
 		bodies.erase(bodies.begin());

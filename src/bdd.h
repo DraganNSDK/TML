@@ -44,20 +44,6 @@ typedef std::pair<bools, uints> xperm;
 typedef std::tuple<bools, uints, uints> xperm_bits;
 typedef std::tuple<uints, bools, uints> permex_bits;
 
-//struct xperm_bits {
-//	bools ex;
-//	uints perm, vbits;
-//	bool operator==(const xperm_bits& other) const { 
-//		return ex == other.ex && perm == other.perm && vbits == other.vbits; 
-//	}
-//};
-//
-//struct permex_bits {
-//	uints perm;
-//	bools ex;
-//	uints vbits;
-//};
-
 struct ite_memo {
 	int_t x, y, z;
 	size_t hash;
@@ -106,12 +92,12 @@ spbdd_handle bdd_and_many_ex(bdd_handles v, const bools& ex);
 spbdd_handle bdd_or_many(bdd_handles v);
 spbdd_handle bdd_and_ex(cr_spbdd_handle x, cr_spbdd_handle y, const bools& b);
 spbdd_handle bdd_and_not_ex(cr_spbdd_handle x, cr_spbdd_handle y, const bools&);
-//spbdd_handle bdd_and_ex_perm(cr_spbdd_handle x, cr_spbdd_handle y,
-//	const bools& b, const uints& m);
+//spbdd_handle bdd_and_ex_perm(
+//	cr_spbdd_handle x, cr_spbdd_handle y, const bools& b, const uints& m);
 spbdd_handle bdd_and_ex_perm(
 	cr_spbdd_handle, cr_spbdd_handle, const bools&, const uints&, const uints&);
-//spbdd_handle bdd_and_not_ex_perm(cr_spbdd_handle x, cr_spbdd_handle y,
-//	const bools& b, const uints& m);
+//spbdd_handle bdd_and_not_ex_perm(
+//	cr_spbdd_handle x, cr_spbdd_handle y, const bools& b, const uints& m);
 spbdd_handle bdd_and_not_ex_perm(
 	cr_spbdd_handle, cr_spbdd_handle, const bools&, const uints&, const uints&);
 //spbdd_handle bdd_and_many_ex_perm(bdd_handles v, const bools& b, const uints&);
@@ -242,8 +228,8 @@ class bdd {
 	static size_t bdd_and_many_iter(bdds, bdds&, bdds&, int_t&, size_t&);
 	static char bdd_and_many_ex_iter(const bdds&v, bdds& h, bdds& l,
 		int_t &m);
-	//static int_t bdd_and_ex_perm(int_t x, int_t y, const bools& ex,
-	//	const uints&);
+	//static int_t bdd_and_ex_perm(
+	//	int_t x, int_t y, const bools& ex, const uints&);
 	static int_t bdd_and_ex_perm(
 		int_t x, int_t y, const bools& ex, const uints& p, const uints& vbits);
 	//static int_t bdd_and_many_ex_perm(bdds v, const bools&, const uints&);
