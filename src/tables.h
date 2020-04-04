@@ -23,8 +23,10 @@
 #include "bdd.h"
 #include "term.h"
 #include "bitsmeta.h"
-#include "iterbdds.h"
+//#include "iterbdds.h"
 #include "dict.h"
+#include "infer_types.h"
+
 typedef int_t rel_t;
 struct raw_term;
 struct raw_prog;
@@ -39,7 +41,7 @@ typedef std::map<int_t, size_t> varmap;
 //typedef std::map<size_t, size_t> posmap;
 typedef std::map<int_t, int_t> env;
 typedef bdd_handles level;
-typedef std::set<std::vector<term>> flat_prog;
+//typedef std::set<std::vector<term>> flat_prog;
 
 std::wostream& operator<<(std::wostream& os, const env& e);
 
@@ -50,19 +52,19 @@ template<typename T> struct ptrcmp {
 typedef std::function<void(size_t,size_t,size_t, const std::vector<term>&)>
 	cb_ground;
 
-struct natcmp {
-	bool operator()(const term& l, const term& r) const {
-		if (l.orderid != r.orderid) return l.orderid < r.orderid;
-		if (l.neg != r.neg) return l.neg;
-		//if (iseq != t.iseq) return iseq;
-		//if (isleq != t.isleq) return isleq;
-		//if (extype != t.extype) return extype < t.extype;
-		//if (l.tab != r.tab) return l.tab < r.tab;
-		if (l.goal != r.goal) return l.goal;
-		return (const ints&)l < r;
-	}
-};
-typedef std::set<term, natcmp> term_set;
+//struct natcmp {
+//	bool operator()(const term& l, const term& r) const {
+//		if (l.orderid != r.orderid) return l.orderid < r.orderid;
+//		if (l.neg != r.neg) return l.neg;
+//		//if (iseq != t.iseq) return iseq;
+//		//if (isleq != t.isleq) return isleq;
+//		//if (extype != t.extype) return extype < t.extype;
+//		//if (l.tab != r.tab) return l.tab < r.tab;
+//		if (l.goal != r.goal) return l.goal;
+//		return (const ints&)l < r;
+//	}
+//};
+//typedef std::set<term, natcmp> term_set;
 
 struct body {
 	bool neg, ext = false;
@@ -177,9 +179,11 @@ struct table {
 };
 
 struct form;
+struct infer_types;
 
 class tables {
 	friend struct iterbdds;
+	friend struct infer_types;
 	friend std::ostream& operator<<(std::ostream& os, const tables& tbl);
 	friend std::istream& operator>>(std::istream& is, tables& tbl);
 public:
@@ -204,13 +208,15 @@ private:
 	std::map<ntable, std::set<tbl_alt>> tblbodies;
 	std::map<ntable, std::set<term>> mhits;
 
-	std::map<tbl_arg, std::set<alt_arg>> minvtyps;
-	std::map<alt_arg, tbl_arg> mtyps;
-	// this is is auto typed info for pre-processing 
-	std::map<tbl_alt, alt> altstyped;
-	// enumerates alts as they come, initially local, it needs to be here
-	// we need to support multiple progs and transform/after
-	std::map<ntable, size_t> altids4types;
+	//std::map<tbl_arg, std::set<alt_arg>> minvtyps;
+	//std::map<alt_arg, tbl_arg> mtyps;
+	//// enumerates alts as they come, initially local, it needs to be here
+	//// we need to support multiple progs and transform/after
+	//std::map<ntable, size_t> altids4types;
+
+	//// this is is auto typed info for pre-processing 
+	//std::map<tbl_alt, alt> altstyped;
+
 	std::map<ntable, size_t> altids;
 
 	// this is the real alts type info, used for post-processing e.g. addbit
@@ -245,6 +251,8 @@ private:
 	//	std::function<int_t(void)>* get_new_rel;
 
 	int_t rel_tml_update, sym_add, sym_del;
+
+	infer_types inference;
 
 	struct witness {
 		size_t rl, al;
@@ -419,21 +427,21 @@ private:
 	void get_nums(const raw_term& t);
 	flat_prog to_terms(const raw_prog& p);
 
-	// type inference related
-	bool get_root_type(const alt_arg& type, tbl_arg& root) const;
-	tbl_arg get_root_type(const tbl_arg& type) const;
-	tbl_arg get_fix_root_type(const tbl_arg& type);
-	bool map_type(tbl_arg from, tbl_arg to);
-	void map_type(alt_arg from, tbl_arg to);
-	//void map_type(tbl_arg to);
-	void propagate_types();
-	void propagate_types(const tbl_arg& intype);
-	void get_alt_types(const term& h, size_t altid);
-	void get_alt_types(const term& h, const term_set& al, size_t altid);
-	//void get_types(const std::map<term, std::set<term_set>>& m);
-	void get_prog_types(const flat_prog& p);
-	void get_types(const flat_prog& p);
-	//void get_types(flat_prog& p);
+	//// type inference related
+	//bool get_root_type(const alt_arg& type, tbl_arg& root) const;
+	//tbl_arg get_root_type(const tbl_arg& type) const;
+	//tbl_arg get_fix_root_type(const tbl_arg& type);
+	//bool map_type(tbl_arg from, tbl_arg to);
+	//void map_type(alt_arg from, tbl_arg to);
+	////void map_type(tbl_arg to);
+	//void propagate_types();
+	//void propagate_types(const tbl_arg& intype);
+	//void get_alt_types(const term& h, size_t altid);
+	//void get_alt_types(const term& h, const term_set& al, size_t altid);
+	////void get_types(const std::map<term, std::set<term_set>>& m);
+	//void get_prog_types(const flat_prog& p);
+	//void get_types(const flat_prog& p);
+	////void get_types(flat_prog& p);
 
 	bool equal_types(const table& tbl, const alt& a) const;
 	void get_rules(flat_prog m);

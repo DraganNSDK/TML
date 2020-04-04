@@ -25,6 +25,7 @@ set(TML_HEADERS
 	err.h
 	input.h
 	iterbdds.h
+	infer_types.h
 	types.h
 	options.h
 	output.h
@@ -43,6 +44,7 @@ set(TML_SOURCES
 	driver.cpp
 	input.cpp
 	iterbdds.cpp
+	infer_types.cpp
 	types.cpp
 	options.cpp
 	output.cpp

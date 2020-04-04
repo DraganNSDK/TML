@@ -25,8 +25,8 @@ using namespace std;
 #define deltail rtbls.deltail
 #define tbls rtbls.tbls
 #define altsmap rtbls.altsmap
-#define get_root_type rtbls.get_root_type
-#define minvtyps rtbls.minvtyps
+#define get_root_type rtbls.inference.get_root_type
+#define minvtyps rtbls.inference.minvtyps
 #define tblrules rtbls.tblrules
 #define tblbodies rtbls.tblbodies
 #define rulealts rtbls.rulealts
