@@ -252,10 +252,6 @@ added shortly.
 
 - addbit and sequences: more coming up shortly (some late changes)...TBD.
 
-- There were some tricky issues with previous (fixed) implementation when bits 
-change (sequences, e.g. if second prog adds/changes bits total). This should
-now be fully stable and supporting any bits change, order etc. (this also solves 
-the 'universe overflow' issue that was reported with sequences, I guess similar).
 
 
 
